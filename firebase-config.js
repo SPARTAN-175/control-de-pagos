@@ -3,11 +3,11 @@
 // 3) No pongas contraseñas ni claves privadas aquí. La configuración web de Firebase
 //    está diseñada para estar en el frontend; la seguridad real se hace con Rules.
 
-export const firebaseConfig = {
-  apiKey: "PEGA_AQUI_TU_API_KEY",
-  authDomain: "PEGA_AQUI_TU_PROJECT_ID.firebaseapp.com",
-  projectId: "PEGA_AQUI_TU_PROJECT_ID",
-  storageBucket: "PEGA_AQUI_TU_STORAGE_BUCKET",
-  messagingSenderId: "PEGA_AQUI_TU_SENDER_ID",
-  appId: "PEGA_AQUI_TU_APP_ID"
+const firebaseConfig = {
+  apiKey: "AIzaSyA0CoYL9Vx5i-9MbZbMkMsymFLAsU4HRck",
+  authDomain: "cahesa-control-de-pagos.firebaseapp.com",
+  projectId: "cahesa-control-de-pagos",
+  storageBucket: "cahesa-control-de-pagos.firebasestorage.app",
+  messagingSenderId: "472837159786",
+  appId: "1:472837159786:web:2245213218fe760b188313"
 };
