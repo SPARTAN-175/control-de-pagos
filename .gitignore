@@ -1,0 +1,12 @@
+# Dependencias y secretos locales
+node_modules/
+.env
+.env.*
+firebase-adminsdk-*.json
+serviceAccountKey.json
+
+# Sistema / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
