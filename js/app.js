@@ -1,0 +1,307 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+import {
+  getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  signOut, sendPasswordResetEmail, updateProfile, sendEmailVerification
+} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+import {
+  getFirestore, doc, setDoc, getDoc, collection, addDoc, updateDoc, deleteDoc,
+  query, where, orderBy, onSnapshot, serverTimestamp, Timestamp
+} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+import {
+  getStorage, ref, uploadBytes, getDownloadURL
+} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-storage.js";
+import { firebaseConfig } from "../firebase-config.js";
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const storage = getStorage(app);
+
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => [...document.querySelectorAll(s)];
+let currentUser = null;
+let profile = {};
+let clients = [];
+let payments = [];
+let unsubClients = null, unsubPayments = null;
+let deferredInstall = null;
+
+const today = new Date();
+const isoDate = (d=today) => {
+  const x = new Date(d.getTime() - d.getTimezoneOffset()*60000);
+  return x.toISOString().slice(0,10);
+};
+const money = (n) => new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN"}).format(Number(n)||0);
+const escapeHtml = (s="") => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const monthKey = (d= new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+
+function toast(msg, type="ok") {
+  const el = $("#toast"); el.textContent = msg; el.className = `toast show ${type}`;
+  clearTimeout(window.__toast); window.__toast = setTimeout(()=>el.className="toast",3500);
+}
+function showLoading(v){ $("#loading").classList.toggle("hidden", !v); }
+
+function friendlyError(err){
+  const code = err?.code || "";
+  const map = {
+    "auth/invalid-credential":"Correo o contraseña incorrectos.",
+    "auth/invalid-email":"El correo no tiene un formato válido.",
+    "auth/email-already-in-use":"Ese correo ya está registrado.",
+    "auth/weak-password":"La contraseña debe tener al menos 6 caracteres.",
+    "auth/user-not-found":"No existe una cuenta con ese correo.",
+    "auth/too-many-requests":"Hay demasiados intentos. Espera un momento e inténtalo de nuevo.",
+    "auth/network-request-failed":"No hay conexión con Firebase.",
+    "auth/operation-not-allowed":"El acceso por correo/contraseña todavía no está habilitado en Firebase.",
+  };
+  return map[code] || err?.message || "Ocurrió un error.";
+}
+
+function switchAuth(panel){
+  ["loginPanel","registerPanel","resetPanel"].forEach(id=>$("#"+id).classList.toggle("hidden", id!==panel));
+}
+
+$("#showRegister").onclick=()=>switchAuth("registerPanel");
+$("#showReset").onclick=()=>switchAuth("resetPanel");
+$("#backLogin1").onclick=()=>switchAuth("loginPanel");
+$("#backLogin2").onclick=()=>switchAuth("loginPanel");
+
+$("#loginForm").addEventListener("submit", async e=>{
+  e.preventDefault(); showLoading(true);
+  try { await signInWithEmailAndPassword(auth,$("#loginEmail").value.trim(),$("#loginPassword").value); }
+  catch(err){ toast(friendlyError(err),"error"); } finally { showLoading(false); }
+});
+
+$("#registerForm").addEventListener("submit", async e=>{
+  e.preventDefault();
+  if($("#registerPassword").value !== $("#registerPassword2").value) return toast("Las contraseñas no coinciden.","error");
+  showLoading(true);
+  try{
+    const cred = await createUserWithEmailAndPassword(auth,$("#registerEmail").value.trim(),$("#registerPassword").value);
+    await updateProfile(cred.user,{displayName:$("#registerName").value.trim()});
+    await setDoc(doc(db,"users",cred.user.uid),{
+      uid:cred.user.uid, name:$("#registerName").value.trim(), email:cred.user.email,
+      phone:"", photoURL:"", createdAt:serverTimestamp(), updatedAt:serverTimestamp()
+    });
+    toast("Cuenta creada correctamente.");
+  }catch(err){ toast(friendlyError(err),"error"); } finally { showLoading(false); }
+});
+
+$("#resetForm").addEventListener("submit", async e=>{
+  e.preventDefault(); showLoading(true);
+  try{
+    await sendPasswordResetEmail(auth,$("#resetEmail").value.trim());
+    toast("Listo. Revisa tu correo y también la carpeta de spam.");
+    $("#resetForm").reset();
+  }catch(err){ toast(friendlyError(err),"error"); } finally { showLoading(false); }
+});
+
+$("#logoutBtn").onclick=()=>signOut(auth);
+
+function setAppVisible(logged){
+  $("#authView").classList.toggle("hidden",logged);
+  $("#appView").classList.toggle("hidden",!logged);
+}
+function renderProfile(){
+  const name = profile.name || currentUser.displayName || "Usuario";
+  $("#topName").textContent=name; $("#welcomeName").textContent=name.split(" ")[0];
+  $("#profileName").value=name; $("#profileEmail").value=currentUser.email || "";
+  $("#profilePhone").value=profile.phone || "";
+  const photo=profile.photoURL || "img/perfil.jpg";
+  $("#topAvatar").src=photo; $("#profileAvatar").src=photo;
+}
+
+onAuthStateChanged(auth, async user=>{
+  if(!user){ currentUser=null; if(unsubClients)unsubClients(); if(unsubPayments)unsubPayments(); setAppVisible(false); return; }
+  currentUser=user; setAppVisible(true); showLoading(true);
+  try{
+    const snap=await getDoc(doc(db,"users",user.uid));
+    profile=snap.exists()?snap.data():{name:user.displayName||"",email:user.email||""};
+    renderProfile(); subscribeData();
+  }catch(err){ toast(friendlyError(err),"error"); } finally { showLoading(false); }
+});
+
+function subscribeData(){
+  if(unsubClients)unsubClients(); if(unsubPayments)unsubPayments();
+  const cq=query(collection(db,"users",currentUser.uid,"clients"),orderBy("name"));
+  unsubClients=onSnapshot(cq,s=>{
+    clients=s.docs.map(d=>({id:d.id,...d.data()})); renderAll();
+  },err=>toast(friendlyError(err),"error"));
+  const pq=query(collection(db,"users",currentUser.uid,"payments"),orderBy("paidAt","desc"));
+  unsubPayments=onSnapshot(pq,s=>{
+    payments=s.docs.map(d=>({id:d.id,...d.data()})); renderAll();
+  },err=>toast(friendlyError(err),"error"));
+}
+
+function clientStatus(c){
+  if(c.currentPaymentStatus==="paid") return "paid";
+  if(c.dueDate && c.dueDate < isoDate()) return "overdue";
+  return "pending";
+}
+function statusLabel(s){ return s==="paid"?"Pagado":s==="overdue"?"Vencido":"Pendiente"; }
+
+function renderAll(){ renderDashboard(); renderClients(); renderPayments(); renderHistory(); }
+
+function renderDashboard(){
+  const active=clients.filter(c=>c.active!==false);
+  const mk=monthKey();
+  const paidThis=payments.filter(p=>p.month===mk);
+  const paidIds=new Set(paidThis.map(p=>p.clientId));
+  const pending=active.filter(c=>!paidIds.has(c.id) && clientStatus(c)!=="paid");
+  const overdue=pending.filter(c=>c.dueDate && c.dueDate<isoDate());
+  const collected=paidThis.reduce((a,p)=>a+Number(p.amount||0),0);
+  const due=pending.reduce((a,c)=>a+Number(c.amount||0),0);
+  $("#statClients").textContent=active.length; $("#statPaid").textContent=paidThis.length;
+  $("#statPending").textContent=pending.length; $("#statOverdue").textContent=overdue.length;
+  $("#statCollected").textContent=money(collected); $("#statDue").textContent=money(due);
+  const list=pending.slice(0,8);
+  $("#dueList").className=list.length?"client-list":"client-list empty-state";
+  $("#dueList").innerHTML=list.length?list.map(clientRowHtml).join(""):"No hay pagos pendientes. 🎉";
+}
+
+function clientRowHtml(c){
+  const s=clientStatus(c);
+  return `<div class="client-row" data-id="${c.id}">
+    <img src="${escapeHtml(c.photoURL||"img/perfil.jpg")}" alt="">
+    <div class="grow"><strong>${escapeHtml(c.name)}</strong><span>${escapeHtml(c.service||"Internet")} · ${money(c.amount)} · vence ${escapeHtml(c.dueDate||"—")}</span></div>
+    <span class="badge ${s}">${statusLabel(s)}</span>
+    <button class="small primary" data-pay="${c.id}">Pagar</button>
+  </div>`;
+}
+
+function renderClients(){
+  const q=($("#clientSearch")?.value||"").toLowerCase().trim(), f=$("#clientFilter")?.value||"all";
+  let arr=clients.filter(c=>(!q || `${c.name} ${c.phone||""} ${c.reference||""}`.toLowerCase().includes(q)) && (f==="all"||clientStatus(c)===f));
+  $("#clientsGrid").className=arr.length?"clients-grid":"clients-grid empty-state";
+  $("#clientsGrid").innerHTML=arr.length?arr.map(c=>`
+    <article class="client-card">
+      <div class="client-cover"><img src="${escapeHtml(c.photoURL||"img/perfil.jpg")}" alt=""><span class="badge ${clientStatus(c)}">${statusLabel(clientStatus(c))}</span></div>
+      <div class="client-body"><h3>${escapeHtml(c.name)}</h3><p>${escapeHtml(c.service||"Internet")} · ${money(c.amount)}/mes</p>
+      <div class="client-meta"><span>📅 ${escapeHtml(c.dueDate||"—")}</span><span>☎ ${escapeHtml(c.phone||"Sin teléfono")}</span></div>
+      <div class="card-actions"><button class="ghost" data-edit="${c.id}">Editar</button><button class="primary" data-pay="${c.id}">Registrar pago</button></div></div>
+    </article>`).join(""):"No hay clientes que coincidan con el filtro.";
+}
+
+function renderPayments(){
+  const q=($("#paymentSearch")?.value||"").toLowerCase().trim(), f=$("#paymentFilter")?.value||"all";
+  const arr=clients.filter(c=>(!q||c.name.toLowerCase().includes(q))&&(f==="all"||clientStatus(c)===f));
+  $("#paymentsList").className=arr.length?"payment-list":"payment-list empty-state";
+  $("#paymentsList").innerHTML=arr.length?arr.map(clientRowHtml).join(""):"No hay clientes.";
+}
+
+function renderHistory(){
+  const q=($("#historySearch")?.value||"").toLowerCase().trim(), m=$("#historyMonth")?.value||"";
+  const arr=payments.filter(p=>(!q||(p.clientName||"").toLowerCase().includes(q))&&(!m||p.month===m));
+  $("#historyList").className=arr.length?"history-list":"history-list empty-state";
+  $("#historyList").innerHTML=arr.length?arr.map(p=>`
+    <div class="history-row"><div><strong>${escapeHtml(p.clientName||"Cliente")}</strong><span>${escapeHtml(p.method||"Efectivo")} · ${escapeHtml(p.paidDate||"")}</span></div>
+    <strong class="amount-positive">${money(p.amount)}</strong></div>`).join(""):"No hay pagos registrados.";
+}
+
+["clientSearch","clientFilter","paymentSearch","paymentFilter","historySearch","historyMonth"].forEach(id=>$(id)?.addEventListener("input",renderAll));
+$("#historyMonth").value=monthKey();
+
+function openClientDialog(c=null){
+  $("#clientDialogTitle").textContent=c?"Editar cliente":"Nuevo cliente";
+  $("#clientId").value=c?.id||""; $("#clientName").value=c?.name||""; $("#clientPhone").value=c?.phone||"";
+  $("#clientReference").value=c?.reference||""; $("#clientAddress").value=c?.address||""; $("#clientService").value=c?.service||"Internet";
+  $("#clientAmount").value=c?.amount??100; $("#clientDueDate").value=c?.dueDate||isoDate(); $("#clientStatus").value=c?.currentPaymentStatus||"pending";
+  $("#clientNotes").value=c?.notes||""; $("#clientPhoto").value="";
+  $("#clientDialog").showModal();
+}
+
+async function uploadImage(file,path){
+  if(!file) return "";
+  if(!file.type.startsWith("image/")) throw new Error("El archivo seleccionado no es una imagen.");
+  if(file.size>5*1024*1024) throw new Error("La imagen debe pesar menos de 5 MB.");
+  const r=ref(storage,path); await uploadBytes(r,file,{contentType:file.type}); return await getDownloadURL(r);
+}
+
+$("#clientForm").addEventListener("submit",async e=>{
+  e.preventDefault(); showLoading(true);
+  try{
+    const id=$("#clientId").value;
+    const old=id?clients.find(c=>c.id===id):null;
+    const file=$("#clientPhoto").files[0];
+    const photoURL=file?await uploadImage(file,`users/${currentUser.uid}/clients/${id||crypto.randomUUID()}/profile`):(old?.photoURL||"");
+    const data={name:$("#clientName").value.trim(),phone:$("#clientPhone").value.trim(),reference:$("#clientReference").value.trim(),
+      address:$("#clientAddress").value.trim(),service:$("#clientService").value.trim(),amount:Number($("#clientAmount").value),
+      dueDate:$("#clientDueDate").value,currentPaymentStatus:$("#clientStatus").value,notes:$("#clientNotes").value.trim(),
+      photoURL,active:true,updatedAt:serverTimestamp()};
+    if(id) await updateDoc(doc(db,"users",currentUser.uid,"clients",id),data);
+    else { data.createdAt=serverTimestamp(); await addDoc(collection(db,"users",currentUser.uid,"clients"),data); }
+    $("#clientDialog").close(); toast(id?"Cliente actualizado.":"Cliente creado correctamente.");
+  }catch(err){ toast(friendlyError(err),"error"); }finally{showLoading(false);}
+});
+
+function openPaymentDialog(id){
+  const c=clients.find(x=>x.id===id); if(!c)return;
+  $("#paymentClientId").value=id; $("#paymentClientLabel").textContent=`${c.name} · ${money(c.amount)}`;
+  $("#paymentAmount").value=c.amount||0; $("#paymentDate").value=isoDate(); $("#paymentNote").value="";
+  $("#paymentDialog").showModal();
+}
+
+$("#paymentForm").addEventListener("submit",async e=>{
+  e.preventDefault(); showLoading(true);
+  try{
+    const id=$("#paymentClientId").value, c=clients.find(x=>x.id===id); if(!c)throw new Error("Cliente no encontrado.");
+    const paidDate=$("#paymentDate").value, amount=Number($("#paymentAmount").value), month=paidDate.slice(0,7);
+    await addDoc(collection(db,"users",currentUser.uid,"payments"),{
+      clientId:id,clientName:c.name,amount,paidDate,month,method:$("#paymentMethod").value,note:$("#paymentNote").value.trim(),
+      paidAt:serverTimestamp(),createdAt:serverTimestamp()
+    });
+    await updateDoc(doc(db,"users",currentUser.uid,"clients",id),{currentPaymentStatus:"paid",lastPaymentDate:paidDate,lastPaymentAmount:amount,updatedAt:serverTimestamp()});
+    $("#paymentDialog").close(); toast(`Pago de ${money(amount)} registrado.`);
+  }catch(err){toast(friendlyError(err),"error");}finally{showLoading(false);}
+});
+
+document.addEventListener("click",e=>{
+  const nav=e.target.closest("[data-section]"); if(nav){goSection(nav.dataset.section);closeSidebar();}
+  const go=e.target.closest("[data-section-go]"); if(go)goSection(go.dataset.sectionGo);
+  const newBtn=e.target.closest("[data-action='new-client']"); if(newBtn)openClientDialog();
+  const edit=e.target.closest("[data-edit]"); if(edit)openClientDialog(clients.find(c=>c.id===edit.dataset.edit));
+  const pay=e.target.closest("[data-pay]"); if(pay)openPaymentDialog(pay.dataset.pay);
+});
+
+function goSection(name){
+  const names={dashboard:"Inicio",clients:"Clientes",payments:"Pagos",history:"Historial",profile:"Mi perfil"};
+  $$(".page-section").forEach(s=>s.classList.toggle("hidden",s.id!==name+"Section"));
+  $$(".nav-item[data-section]").forEach(b=>b.classList.toggle("active",b.dataset.section===name));
+  $("#sectionTitle").textContent=names[name]||"Inicio";
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+function closeSidebar(){ $("#sidebar").classList.remove("open"); }
+$("#openMenu").onclick=()=>$("#sidebar").classList.add("open");
+$("#closeMenu").onclick=closeSidebar;
+
+$("#profileForm").addEventListener("submit",async e=>{
+  e.preventDefault(); showLoading(true);
+  try{
+    const name=$("#profileName").value.trim(), phone=$("#profilePhone").value.trim();
+    await updateDoc(doc(db,"users",currentUser.uid),{name,phone,updatedAt:serverTimestamp()});
+    await updateProfile(currentUser,{displayName:name}); profile={...profile,name,phone}; renderProfile(); toast("Perfil actualizado.");
+  }catch(err){toast(friendlyError(err),"error");}finally{showLoading(false);}
+});
+
+$("#profilePhoto").addEventListener("change",async e=>{
+  const file=e.target.files[0]; if(!file)return; showLoading(true);
+  try{
+    const url=await uploadImage(file,`users/${currentUser.uid}/profile/avatar`);
+    await updateDoc(doc(db,"users",currentUser.uid),{photoURL:url,updatedAt:serverTimestamp()});
+    profile.photoURL=url; renderProfile(); toast("Foto actualizada.");
+  }catch(err){toast(friendlyError(err),"error");}finally{showLoading(false);}
+});
+
+$("#sendVerification").onclick=async()=>{
+  try{await sendEmailVerification(currentUser);toast("Correo de verificación enviado.");}
+  catch(err){toast(friendlyError(err),"error");}
+};
+
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferredInstall=e;$("#installBtn").classList.remove("hidden");});
+$("#installBtn").onclick=async()=>{
+  if(!deferredInstall)return; deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall=null; $("#installBtn").classList.add("hidden");
+};
+window.addEventListener("appinstalled",()=>toast("Aplicación instalada correctamente."));
+
+$("#todayLabel").textContent=new Intl.DateTimeFormat("es-MX",{dateStyle:"full"}).format(new Date());
+if("serviceWorker" in navigator) window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));
