@@ -2,194 +2,1480 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  >
+
   <meta name="theme-color" content="#0f172a">
-  <meta name="description" content="Control de pagos para servicios de Internet">
+
+  <meta
+    name="description"
+    content="Control de pagos para servicios de Internet"
+  >
+
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="img/perfil.jpg">
-  <link rel="stylesheet" href="css/app.css">
+
+  <link
+    rel="icon"
+    href="img/perfil.jpg"
+    type="image/jpeg"
+  >
+
+  <link
+    rel="apple-touch-icon"
+    href="img/icon-192.png"
+  >
+
+  <link
+    rel="stylesheet"
+    href="css/app.css"
+  >
+
   <title>CAHESA · Control de Pagos</title>
 </head>
+
 <body>
-  <div id="toast" class="toast" aria-live="polite"></div>
 
-  <section id="authView" class="auth-shell">
+  <!-- =====================================================
+       NOTIFICACIONES
+       ===================================================== -->
+
+  <div
+    id="toast"
+    class="toast"
+    aria-live="polite"
+  ></div>
+
+
+  <!-- =====================================================
+       PANTALLA DE AUTENTICACIÓN
+       ===================================================== -->
+
+  <section
+    id="authView"
+    class="auth-shell"
+  >
+
     <div class="auth-card">
+
+      <!-- MARCA -->
+
       <div class="brand">
-        <img src="img/perfil.jpg" alt="CAHESA" class="brand-avatar">
+
+        <img
+          src="img/perfil.jpg"
+          alt="CAHESA"
+          class="brand-avatar"
+        >
+
         <div>
+
           <strong>CAHESA</strong>
-          <span>Control de Pagos</span>
+
+          <span>
+            Control de Pagos
+          </span>
+
         </div>
+
       </div>
 
-      <div id="loginPanel" class="auth-panel">
-        <h1>Bienvenido</h1>
-        <p class="muted">Administra tus clientes y pagos desde cualquier dispositivo.</p>
+
+      <!-- =================================================
+           LOGIN
+           ================================================= -->
+
+      <div
+        id="loginPanel"
+        class="auth-panel"
+      >
+
+        <h1>
+          Bienvenido
+        </h1>
+
+        <p class="muted">
+          Administra tus clientes y pagos desde cualquier dispositivo.
+        </p>
+
+
         <form id="loginForm">
-          <label>Correo electrónico<input id="loginEmail" type="email" autocomplete="email" required placeholder="tu@correo.com"></label>
-          <label>Contraseña<input id="loginPassword" type="password" autocomplete="current-password" required placeholder="••••••••"></label>
-          <button class="primary full" type="submit">Iniciar sesión</button>
+
+          <label>
+
+            Correo electrónico
+
+            <input
+              id="loginEmail"
+              type="email"
+              autocomplete="email"
+              required
+              placeholder="tu@correo.com"
+            >
+
+          </label>
+
+
+          <label>
+
+            Contraseña
+
+            <input
+              id="loginPassword"
+              type="password"
+              autocomplete="current-password"
+              required
+              placeholder="••••••••"
+            >
+
+          </label>
+
+
+          <button
+            class="primary full"
+            type="submit"
+          >
+            Iniciar sesión
+          </button>
+
         </form>
+
+
         <div class="auth-links">
-          <button class="link-btn" id="showRegister">Crear cuenta</button>
-          <button class="link-btn" id="showReset">¿Olvidaste tu contraseña?</button>
+
+          <button
+            class="link-btn"
+            id="showRegister"
+            type="button"
+          >
+            Crear cuenta
+          </button>
+
+          <button
+            class="link-btn"
+            id="showReset"
+            type="button"
+          >
+            ¿Olvidaste tu contraseña?
+          </button>
+
         </div>
+
       </div>
 
-      <div id="registerPanel" class="auth-panel hidden">
-        <h1>Crear cuenta</h1>
-        <p class="muted">Tu cuenta será la propietaria de tus datos de control de pagos.</p>
+
+      <!-- =================================================
+           REGISTRO
+           ================================================= -->
+
+      <div
+        id="registerPanel"
+        class="auth-panel hidden"
+      >
+
+        <h1>
+          Crear cuenta
+        </h1>
+
+        <p class="muted">
+          Tu cuenta será la propietaria de tus datos de control de pagos.
+        </p>
+
+
         <form id="registerForm">
-          <label>Nombre<input id="registerName" type="text" autocomplete="name" required placeholder="Carlos Arturo"></label>
-          <label>Correo electrónico<input id="registerEmail" type="email" autocomplete="email" required placeholder="tu@correo.com"></label>
-          <label>Contraseña<input id="registerPassword" type="password" autocomplete="new-password" minlength="6" required placeholder="Mínimo 6 caracteres"></label>
-          <label>Confirmar contraseña<input id="registerPassword2" type="password" autocomplete="new-password" minlength="6" required placeholder="Repite la contraseña"></label>
-          <button class="primary full" type="submit">Registrarme</button>
+
+          <label>
+
+            Nombre
+
+            <input
+              id="registerName"
+              type="text"
+              autocomplete="name"
+              required
+              placeholder="Carlos Arturo"
+            >
+
+          </label>
+
+
+          <label>
+
+            Correo electrónico
+
+            <input
+              id="registerEmail"
+              type="email"
+              autocomplete="email"
+              required
+              placeholder="tu@correo.com"
+            >
+
+          </label>
+
+
+          <label>
+
+            Contraseña
+
+            <input
+              id="registerPassword"
+              type="password"
+              autocomplete="new-password"
+              minlength="6"
+              required
+              placeholder="Mínimo 6 caracteres"
+            >
+
+          </label>
+
+
+          <label>
+
+            Confirmar contraseña
+
+            <input
+              id="registerPassword2"
+              type="password"
+              autocomplete="new-password"
+              minlength="6"
+              required
+              placeholder="Repite la contraseña"
+            >
+
+          </label>
+
+
+          <button
+            class="primary full"
+            type="submit"
+          >
+            Registrarme
+          </button>
+
         </form>
-        <button class="link-btn back-login" id="backLogin1">Ya tengo una cuenta</button>
+
+
+        <button
+          class="link-btn back-login"
+          id="backLogin1"
+          type="button"
+        >
+          Ya tengo una cuenta
+        </button>
+
       </div>
 
-      <div id="resetPanel" class="auth-panel hidden">
-        <h1>Recuperar contraseña</h1>
-        <p class="muted">Te enviaremos un enlace al correo registrado para crear una contraseña nueva.</p>
+
+      <!-- =================================================
+           RECUPERAR CONTRASEÑA
+           ================================================= -->
+
+      <div
+        id="resetPanel"
+        class="auth-panel hidden"
+      >
+
+        <h1>
+          Recuperar contraseña
+        </h1>
+
+        <p class="muted">
+          Te enviaremos un enlace al correo registrado para crear una contraseña nueva.
+        </p>
+
+
         <form id="resetForm">
-          <label>Correo electrónico<input id="resetEmail" type="email" autocomplete="email" required placeholder="tu@correo.com"></label>
-          <button class="primary full" type="submit">Enviar enlace</button>
+
+          <label>
+
+            Correo electrónico
+
+            <input
+              id="resetEmail"
+              type="email"
+              autocomplete="email"
+              required
+              placeholder="tu@correo.com"
+            >
+
+          </label>
+
+
+          <button
+            class="primary full"
+            type="submit"
+          >
+            Enviar enlace
+          </button>
+
         </form>
-        <button class="link-btn back-login" id="backLogin2">Volver al inicio de sesión</button>
+
+
+        <button
+          class="link-btn back-login"
+          id="backLogin2"
+          type="button"
+        >
+          Volver al inicio de sesión
+        </button>
+
       </div>
+
     </div>
+
   </section>
 
-  <section id="appView" class="app-shell hidden">
-    <aside id="sidebar" class="sidebar">
+
+
+  <!-- =====================================================
+       APLICACIÓN
+       ===================================================== -->
+
+  <section
+    id="appView"
+    class="app-shell hidden"
+  >
+
+
+    <!-- ===================================================
+         MENÚ LATERAL
+         =================================================== -->
+
+    <aside
+      id="sidebar"
+      class="sidebar"
+    >
+
       <div class="side-brand">
-        <img src="img/perfil.jpg" alt="">
-        <div><strong>CAHESA</strong><small>Control de Pagos</small></div>
-        <button id="closeMenu" class="icon-btn mobile-only">×</button>
+
+        <img
+          src="img/perfil.jpg"
+          alt="CAHESA"
+        >
+
+        <div>
+
+          <strong>
+            CAHESA
+          </strong>
+
+          <small>
+            Control de Pagos
+          </small>
+
+        </div>
+
+
+        <button
+          id="closeMenu"
+          class="icon-btn mobile-only"
+          type="button"
+        >
+          ×
+        </button>
+
       </div>
+
+
+      <!-- NAVEGACIÓN -->
+
       <nav>
-        <button class="nav-item active" data-section="dashboard"><span>⌂</span> Inicio</button>
-        <button class="nav-item" data-section="clients"><span>♙</span> Clientes</button>
-        <button class="nav-item" data-section="payments"><span>▣</span> Pagos</button>
-        <button class="nav-item" data-section="history"><span>◷</span> Historial</button>
-        <button class="nav-item" data-section="profile"><span>⚙</span> Mi perfil</button>
+
+        <button
+          class="nav-item active"
+          data-section="dashboard"
+          type="button"
+        >
+
+          <span>⌂</span>
+
+          Inicio
+
+        </button>
+
+
+        <button
+          class="nav-item"
+          data-section="clients"
+          type="button"
+        >
+
+          <span>♙</span>
+
+          Clientes
+
+        </button>
+
+
+        <button
+          class="nav-item"
+          data-section="payments"
+          type="button"
+        >
+
+          <span>▣</span>
+
+          Pagos
+
+        </button>
+
+
+        <button
+          class="nav-item"
+          data-section="history"
+          type="button"
+        >
+
+          <span>◷</span>
+
+          Historial
+
+        </button>
+
+
+        <button
+          class="nav-item"
+          data-section="profile"
+          type="button"
+        >
+
+          <span>⚙</span>
+
+          Mi perfil
+
+        </button>
+
       </nav>
+
+
+      <!-- PARTE INFERIOR -->
+
       <div class="side-bottom">
-        <button id="installBtn" class="nav-item hidden"><span>⇩</span> Instalar app</button>
-        <button id="logoutBtn" class="nav-item"><span>↪</span> Cerrar sesión</button>
+
+        <button
+          id="installBtn"
+          class="nav-item hidden"
+          type="button"
+        >
+
+          <span>⇩</span>
+
+          Instalar app
+
+        </button>
+
+
+        <button
+          id="logoutBtn"
+          class="nav-item"
+          type="button"
+        >
+
+          <span>↪</span>
+
+          Cerrar sesión
+
+        </button>
+
       </div>
+
     </aside>
 
+
+
+    <!-- ===================================================
+         CONTENIDO PRINCIPAL
+         =================================================== -->
+
     <main class="main">
+
+
+      <!-- =================================================
+           BARRA SUPERIOR
+           ================================================= -->
+
       <header class="topbar">
-        <button id="openMenu" class="icon-btn mobile-only">☰</button>
+
+        <button
+          id="openMenu"
+          class="icon-btn mobile-only"
+          type="button"
+        >
+          ☰
+        </button>
+
+
         <div>
-          <h2 id="sectionTitle">Inicio</h2>
-          <p id="todayLabel" class="muted"></p>
+
+          <h2 id="sectionTitle">
+            Inicio
+          </h2>
+
+          <p
+            id="todayLabel"
+            class="muted"
+          ></p>
+
         </div>
+
+
         <div class="user-mini">
-          <img id="topAvatar" src="img/perfil.jpg" alt="">
-          <span id="topName">Usuario</span>
+
+          <img
+            id="topAvatar"
+            src="img/perfil.jpg"
+            alt="Usuario"
+          >
+
+          <span id="topName">
+            Usuario
+          </span>
+
         </div>
+
       </header>
 
-      <div id="loading" class="loading hidden"><div class="spinner"></div><span>Cargando…</span></div>
 
-      <section id="dashboardSection" class="page-section">
+
+      <!-- =================================================
+           LOADING
+           ================================================= -->
+
+      <div
+        id="loading"
+        class="loading hidden"
+      >
+
+        <div class="spinner"></div>
+
+        <span>
+          Cargando…
+        </span>
+
+      </div>
+
+
+
+      <!-- =================================================
+           DASHBOARD
+           ================================================= -->
+
+      <section
+        id="dashboardSection"
+        class="page-section"
+      >
+
         <div class="welcome">
-          <div><span class="eyebrow">Resumen</span><h1>Hola, <span id="welcomeName">usuario</span> 👋</h1><p>Este es el estado de tus servicios de Internet.</p></div>
-          <button class="primary" data-action="new-client">+ Nuevo cliente</button>
+
+          <div>
+
+            <span class="eyebrow">
+              Resumen
+            </span>
+
+            <h1>
+              Hola,
+              <span id="welcomeName">
+                usuario
+              </span>
+              👋
+            </h1>
+
+            <p>
+              Este es el estado de tus servicios de Internet.
+            </p>
+
+          </div>
+
+
+          <button
+            class="primary"
+            data-action="new-client"
+            type="button"
+          >
+            + Nuevo cliente
+          </button>
+
         </div>
+
+
+        <!-- ESTADÍSTICAS -->
+
         <div class="stats-grid">
-          <article class="stat"><span>Clientes activos</span><strong id="statClients">0</strong><small>registrados</small></article>
-          <article class="stat ok"><span>Pagados</span><strong id="statPaid">0</strong><small>este mes</small></article>
-          <article class="stat warn"><span>Pendientes</span><strong id="statPending">0</strong><small>por cobrar</small></article>
-          <article class="stat danger"><span>Vencidos</span><strong id="statOverdue">0</strong><small>requieren atención</small></article>
+
+
+          <article class="stat">
+
+            <span>
+              Clientes activos
+            </span>
+
+            <strong id="statClients">
+              0
+            </strong>
+
+            <small>
+              registrados
+            </small>
+
+          </article>
+
+
+          <article class="stat ok">
+
+            <span>
+              Pagados
+            </span>
+
+            <strong id="statPaid">
+              0
+            </strong>
+
+            <small>
+              este mes
+            </small>
+
+          </article>
+
+
+          <article class="stat warn">
+
+            <span>
+              Pendientes
+            </span>
+
+            <strong id="statPending">
+              0
+            </strong>
+
+            <small>
+              por cobrar
+            </small>
+
+          </article>
+
+
+          <article class="stat danger">
+
+            <span>
+              Vencidos
+            </span>
+
+            <strong id="statOverdue">
+              0
+            </strong>
+
+            <small>
+              requieren atención
+            </small>
+
+          </article>
+
+
         </div>
+
+
+        <!-- DINERO -->
+
         <div class="money-grid">
-          <article class="money-card"><span>Cobrado este mes</span><strong id="statCollected">$0.00</strong></article>
-          <article class="money-card"><span>Pendiente por cobrar</span><strong id="statDue">$0.00</strong></article>
+
+
+          <article class="money-card">
+
+            <span>
+              Cobrado este mes
+            </span>
+
+            <strong id="statCollected">
+              $0.00
+            </strong>
+
+          </article>
+
+
+          <article class="money-card">
+
+            <span>
+              Pendiente por cobrar
+            </span>
+
+            <strong id="statDue">
+              $0.00
+            </strong>
+
+          </article>
+
+
         </div>
+
+
+        <!-- CLIENTES POR COBRAR -->
+
         <div class="section-card">
-          <div class="section-head"><div><h3>Clientes por cobrar</h3><p class="muted">Los pagos pendientes y vencidos aparecen aquí.</p></div><button class="ghost" data-section-go="clients">Ver todos</button></div>
-          <div id="dueList" class="client-list empty-state">No hay pagos pendientes.</div>
+
+          <div class="section-head">
+
+            <div>
+
+              <h3>
+                Clientes por cobrar
+              </h3>
+
+              <p class="muted">
+                Los pagos pendientes y vencidos aparecen aquí.
+              </p>
+
+            </div>
+
+
+            <button
+              class="ghost"
+              data-section-go="clients"
+              type="button"
+            >
+              Ver todos
+            </button>
+
+          </div>
+
+
+          <div
+            id="dueList"
+            class="client-list empty-state"
+          >
+            No hay pagos pendientes.
+          </div>
+
         </div>
+
       </section>
 
-      <section id="clientsSection" class="page-section hidden">
-        <div class="page-head"><div><h1>Clientes</h1><p class="muted">Administra tus suscriptores de Internet.</p></div><button class="primary" data-action="new-client">+ Nuevo cliente</button></div>
-        <div class="toolbar"><input id="clientSearch" type="search" placeholder="Buscar por nombre, teléfono o referencia…"><select id="clientFilter"><option value="all">Todos</option><option value="paid">Pagados</option><option value="pending">Pendientes</option><option value="overdue">Vencidos</option></select></div>
-        <div id="clientsGrid" class="clients-grid empty-state">Todavía no tienes clientes.</div>
+
+
+      <!-- =================================================
+           CLIENTES
+           ================================================= -->
+
+      <section
+        id="clientsSection"
+        class="page-section hidden"
+      >
+
+        <div class="page-head">
+
+          <div>
+
+            <h1>
+              Clientes
+            </h1>
+
+            <p class="muted">
+              Administra tus suscriptores de Internet.
+            </p>
+
+          </div>
+
+
+          <button
+            class="primary"
+            data-action="new-client"
+            type="button"
+          >
+            + Nuevo cliente
+          </button>
+
+        </div>
+
+
+        <div class="toolbar">
+
+          <input
+            id="clientSearch"
+            type="search"
+            placeholder="Buscar por nombre, teléfono o referencia…"
+          >
+
+
+          <select id="clientFilter">
+
+            <option value="all">
+              Todos
+            </option>
+
+            <option value="paid">
+              Pagados
+            </option>
+
+            <option value="pending">
+              Pendientes
+            </option>
+
+            <option value="overdue">
+              Vencidos
+            </option>
+
+          </select>
+
+        </div>
+
+
+        <div
+          id="clientsGrid"
+          class="clients-grid empty-state"
+        >
+          Todavía no tienes clientes.
+        </div>
+
       </section>
 
-      <section id="paymentsSection" class="page-section hidden">
-        <div class="page-head"><div><h1>Pagos</h1><p class="muted">Registra rápidamente quién ya pagó.</p></div></div>
+
+
+      <!-- =================================================
+           PAGOS
+           ================================================= -->
+
+      <section
+        id="paymentsSection"
+        class="page-section hidden"
+      >
+
+        <div class="page-head">
+
+          <div>
+
+            <h1>
+              Pagos
+            </h1>
+
+            <p class="muted">
+              Registra rápidamente quién ya pagó.
+            </p>
+
+          </div>
+
+        </div>
+
+
         <div class="section-card">
-          <div class="toolbar"><input id="paymentSearch" type="search" placeholder="Buscar cliente…"><select id="paymentFilter"><option value="all">Todos</option><option value="pending">Pendientes</option><option value="paid">Pagados</option><option value="overdue">Vencidos</option></select></div>
-          <div id="paymentsList" class="payment-list empty-state">No hay clientes.</div>
+
+          <div class="toolbar">
+
+            <input
+              id="paymentSearch"
+              type="search"
+              placeholder="Buscar cliente…"
+            >
+
+
+            <select id="paymentFilter">
+
+              <option value="all">
+                Todos
+              </option>
+
+              <option value="pending">
+                Pendientes
+              </option>
+
+              <option value="paid">
+                Pagados
+              </option>
+
+              <option value="overdue">
+                Vencidos
+              </option>
+
+            </select>
+
+          </div>
+
+
+          <div
+            id="paymentsList"
+            class="payment-list empty-state"
+          >
+            No hay clientes.
+          </div>
+
         </div>
+
       </section>
 
-      <section id="historySection" class="page-section hidden">
-        <div class="page-head"><div><h1>Historial de pagos</h1><p class="muted">Consulta los pagos registrados.</p></div></div>
+
+
+      <!-- =================================================
+           HISTORIAL
+           ================================================= -->
+
+      <section
+        id="historySection"
+        class="page-section hidden"
+      >
+
+        <div class="page-head">
+
+          <div>
+
+            <h1>
+              Historial de pagos
+            </h1>
+
+            <p class="muted">
+              Consulta los pagos registrados.
+            </p>
+
+          </div>
+
+        </div>
+
+
         <div class="section-card">
-          <div class="toolbar"><input id="historySearch" type="search" placeholder="Buscar cliente…"><input id="historyMonth" type="month"></div>
-          <div id="historyList" class="history-list empty-state">No hay pagos registrados.</div>
+
+          <div class="toolbar">
+
+            <input
+              id="historySearch"
+              type="search"
+              placeholder="Buscar cliente…"
+            >
+
+
+            <input
+              id="historyMonth"
+              type="month"
+            >
+
+          </div>
+
+
+          <div
+            id="historyList"
+            class="history-list empty-state"
+          >
+            No hay pagos registrados.
+          </div>
+
         </div>
+
       </section>
 
-      <section id="profileSection" class="page-section hidden">
-        <div class="page-head"><div><h1>Mi perfil</h1><p class="muted">Datos de tu cuenta de administración.</p></div></div>
+
+
+      <!-- =================================================
+           PERFIL
+           ================================================= -->
+
+      <section
+        id="profileSection"
+        class="page-section hidden"
+      >
+
+        <div class="page-head">
+
+          <div>
+
+            <h1>
+              Mi perfil
+            </h1>
+
+            <p class="muted">
+              Datos de tu cuenta de administración.
+            </p>
+
+          </div>
+
+        </div>
+
+
         <div class="profile-card section-card">
-          <div class="profile-photo-wrap"><img id="profileAvatar" src="img/perfil.jpg" alt=""><label class="upload-photo">Cambiar foto<input id="profilePhoto" type="file" accept="image/*"></label></div>
-          <form id="profileForm" class="profile-form">
-            <label>Nombre<input id="profileName" required></label>
-            <label>Correo<input id="profileEmail" type="email" disabled></label>
-            <label>Teléfono<input id="profilePhone" type="tel" placeholder="Opcional"></label>
-            <button class="primary" type="submit">Guardar perfil</button>
+
+
+          <div class="profile-photo-wrap">
+
+            <img
+              id="profileAvatar"
+              src="img/perfil.jpg"
+              alt="Foto de perfil"
+            >
+
+
+            <label class="upload-photo">
+
+              Cambiar foto
+
+              <input
+                id="profilePhoto"
+                type="file"
+                accept="image/*"
+              >
+
+            </label>
+
+          </div>
+
+
+          <form
+            id="profileForm"
+            class="profile-form"
+          >
+
+            <label>
+
+              Nombre
+
+              <input
+                id="profileName"
+                required
+              >
+
+            </label>
+
+
+            <label>
+
+              Correo
+
+              <input
+                id="profileEmail"
+                type="email"
+                disabled
+              >
+
+            </label>
+
+
+            <label>
+
+              Teléfono
+
+              <input
+                id="profilePhone"
+                type="tel"
+                placeholder="Opcional"
+              >
+
+            </label>
+
+
+            <button
+              class="primary"
+              type="submit"
+            >
+              Guardar perfil
+            </button>
+
           </form>
+
         </div>
-        <div class="section-card danger-card"><h3>Seguridad</h3><p class="muted">Puedes cerrar tu sesión desde el menú. La recuperación de contraseña se realiza por correo.</p><button id="sendVerification" class="ghost">Enviar verificación de correo</button></div>
+
+
+        <!-- SEGURIDAD -->
+
+        <div class="section-card danger-card">
+
+          <h3>
+            Seguridad
+          </h3>
+
+          <p class="muted">
+            Puedes cerrar tu sesión desde el menú.
+            La recuperación de contraseña se realiza por correo.
+          </p>
+
+
+          <button
+            id="sendVerification"
+            class="ghost"
+            type="button"
+          >
+            Enviar verificación de correo
+          </button>
+
+        </div>
+
       </section>
+
     </main>
+
   </section>
 
+
+
+  <!-- =====================================================
+       MODAL NUEVO / EDITAR CLIENTE
+       ===================================================== -->
+
   <dialog id="clientDialog">
-    <form method="dialog" id="clientForm" class="dialog-card">
-      <div class="dialog-head"><div><h2 id="clientDialogTitle">Nuevo cliente</h2><p class="muted">Los datos se guardarán en Firestore.</p></div><button value="cancel" class="icon-btn">×</button></div>
-      <input type="hidden" id="clientId">
-      <div class="form-grid">
-        <label>Nombre completo*<input id="clientName" required></label>
-        <label>Teléfono<input id="clientPhone" type="tel"></label>
-        <label>Referencia / colonia<input id="clientReference"></label>
-        <label>Dirección<input id="clientAddress"></label>
-        <label>Servicio<input id="clientService" value="Internet"></label>
-        <label>Mensualidad*<input id="clientAmount" type="number" min="0" step="0.01" required value="100"></label>
-        <label>Fecha de pago*<input id="clientDueDate" type="date" required></label>
-        <label>Estado inicial<select id="clientStatus"><option value="pending">Pendiente</option><option value="paid">Pagado</option></select></label>
-        <label class="full-row">Notas<textarea id="clientNotes" rows="3"></textarea></label>
-        <label class="full-row">Foto del cliente<input id="clientPhoto" type="file" accept="image/*"></label>
+
+    <form
+      id="clientForm"
+      class="dialog-card"
+    >
+
+      <div class="dialog-head">
+
+        <div>
+
+          <h2 id="clientDialogTitle">
+            Nuevo cliente
+          </h2>
+
+          <p class="muted">
+            Los datos se guardarán en Firestore.
+          </p>
+
+        </div>
+
+
+        <button
+          type="button"
+          data-close-dialog="clientDialog"
+          class="icon-btn"
+          aria-label="Cerrar"
+        >
+          ×
+        </button>
+
       </div>
-      <div class="dialog-actions"><button value="cancel" class="ghost">Cancelar</button><button id="saveClientBtn" class="primary" type="submit">Guardar cliente</button></div>
+
+
+      <!-- ID OCULTO -->
+
+      <input
+        type="hidden"
+        id="clientId"
+      >
+
+
+      <!-- CAMPOS -->
+
+      <div class="form-grid">
+
+
+        <label>
+
+          Nombre completo*
+
+          <input
+            id="clientName"
+            type="text"
+            required
+            autocomplete="name"
+          >
+
+        </label>
+
+
+        <label>
+
+          Teléfono
+
+          <input
+            id="clientPhone"
+            type="tel"
+            autocomplete="tel"
+          >
+
+        </label>
+
+
+        <label>
+
+          Referencia / colonia
+
+          <input
+            id="clientReference"
+            type="text"
+          >
+
+        </label>
+
+
+        <label>
+
+          Dirección
+
+          <input
+            id="clientAddress"
+            type="text"
+          >
+
+        </label>
+
+
+        <label>
+
+          Servicio
+
+          <input
+            id="clientService"
+            type="text"
+            value="Internet"
+          >
+
+        </label>
+
+
+        <label>
+
+          Mensualidad*
+
+          <input
+            id="clientAmount"
+            type="number"
+            min="0"
+            step="0.01"
+            required
+            value="100"
+          >
+
+        </label>
+
+
+        <label>
+
+          Fecha de pago*
+
+          <input
+            id="clientDueDate"
+            type="date"
+            required
+          >
+
+        </label>
+
+
+        <label>
+
+          Estado inicial
+
+          <select id="clientStatus">
+
+            <option value="pending">
+              Pendiente
+            </option>
+
+            <option value="paid">
+              Pagado
+            </option>
+
+          </select>
+
+        </label>
+
+
+        <label class="full-row">
+
+          Notas
+
+          <textarea
+            id="clientNotes"
+            rows="3"
+          ></textarea>
+
+        </label>
+
+
+        <label class="full-row">
+
+          Foto del cliente
+
+          <input
+            id="clientPhoto"
+            type="file"
+            accept="image/*"
+          >
+
+        </label>
+
+
+      </div>
+
+
+      <!-- BOTONES -->
+
+      <div class="dialog-actions">
+
+        <button
+          type="button"
+          data-close-dialog="clientDialog"
+          class="ghost"
+        >
+          Cancelar
+        </button>
+
+
+        <button
+          id="saveClientBtn"
+          class="primary"
+          type="submit"
+        >
+          Guardar cliente
+        </button>
+
+      </div>
+
     </form>
+
   </dialog>
+
+
+
+  <!-- =====================================================
+       MODAL REGISTRAR PAGO
+       ===================================================== -->
 
   <dialog id="paymentDialog">
-    <form method="dialog" id="paymentForm" class="dialog-card">
-      <div class="dialog-head"><div><h2>Registrar pago</h2><p id="paymentClientLabel" class="muted"></p></div><button value="cancel" class="icon-btn">×</button></div>
-      <input type="hidden" id="paymentClientId">
-      <div class="form-grid">
-        <label>Monto*<input id="paymentAmount" type="number" min="0" step="0.01" required></label>
-        <label>Fecha del pago*<input id="paymentDate" type="date" required></label>
-        <label>Método<select id="paymentMethod"><option>Efectivo</option><option>Transferencia</option><option>Depósito</option><option>Otro</option></select></label>
-        <label class="full-row">Nota<input id="paymentNote"></label>
+
+    <form
+      id="paymentForm"
+      class="dialog-card"
+    >
+
+      <div class="dialog-head">
+
+        <div>
+
+          <h2>
+            Registrar pago
+          </h2>
+
+          <p
+            id="paymentClientLabel"
+            class="muted"
+          ></p>
+
+        </div>
+
+
+        <button
+          type="button"
+          data-close-dialog="paymentDialog"
+          class="icon-btn"
+          aria-label="Cerrar"
+        >
+          ×
+        </button>
+
       </div>
-      <div class="dialog-actions"><button value="cancel" class="ghost">Cancelar</button><button class="primary" type="submit">Confirmar pago</button></div>
+
+
+      <input
+        type="hidden"
+        id="paymentClientId"
+      >
+
+
+      <div class="form-grid">
+
+
+        <label>
+
+          Monto*
+
+          <input
+            id="paymentAmount"
+            type="number"
+            min="0"
+            step="0.01"
+            required
+          >
+
+        </label>
+
+
+        <label>
+
+          Fecha del pago*
+
+          <input
+            id="paymentDate"
+            type="date"
+            required
+          >
+
+        </label>
+
+
+        <label>
+
+          Método
+
+          <select id="paymentMethod">
+
+            <option>
+              Efectivo
+            </option>
+
+            <option>
+              Transferencia
+            </option>
+
+            <option>
+              Depósito
+            </option>
+
+            <option>
+              Otro
+            </option>
+
+          </select>
+
+        </label>
+
+
+        <label class="full-row">
+
+          Nota
+
+          <input
+            id="paymentNote"
+            type="text"
+          >
+
+        </label>
+
+
+      </div>
+
+
+      <div class="dialog-actions">
+
+        <button
+          type="button"
+          data-close-dialog="paymentDialog"
+          class="ghost"
+        >
+          Cancelar
+        </button>
+
+
+        <button
+          class="primary"
+          type="submit"
+        >
+          Confirmar pago
+        </button>
+
+      </div>
+
     </form>
+
   </dialog>
 
-  <script type="module" src="js/app.js"></script>
+
+
+  <!-- =====================================================
+       JAVASCRIPT PRINCIPAL
+       ===================================================== -->
+
+  <script
+    type="module"
+    src="js/app.js"
+  ></script>
+
 </body>
 </html>
