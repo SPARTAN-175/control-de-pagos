@@ -25,7 +25,7 @@
 
   <link
     rel="apple-touch-icon"
-    href="img/icon-192.png"
+    href="img/perfil.jpg"
   >
 
   <link
@@ -432,6 +432,19 @@
           <span>◷</span>
 
           Historial
+
+        </button>
+
+
+        <button
+          class="nav-item"
+          data-section="data"
+          type="button"
+        >
+
+          <span>⇅</span>
+
+          Datos e imágenes
 
         </button>
 
@@ -957,6 +970,177 @@
           >
             No hay pagos registrados.
           </div>
+
+        </div>
+
+      </section>
+
+
+
+      <!-- =================================================
+           DATOS E IMÁGENES
+           ================================================= -->
+
+      <section
+        id="dataSection"
+        class="page-section hidden"
+      >
+
+        <div class="page-head">
+
+          <div>
+
+            <h1>Datos e imágenes</h1>
+
+            <p class="muted">
+              Importa y exporta clientes en formato compatible con Excel y sube fotografías directamente a Firebase Storage.
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <div class="data-tools-grid">
+
+          <article class="section-card data-tool">
+
+            <div class="tool-icon">⇅</div>
+
+            <div>
+              <h3>Clientes</h3>
+              <p class="muted">
+                Descarga tus clientes para abrirlos en Excel. También puedes importar un CSV y actualizar o crear registros.
+              </p>
+            </div>
+
+            <div class="tool-actions">
+              <button id="exportClientsBtn" class="primary" type="button">
+                Exportar clientes
+              </button>
+
+              <button id="downloadClientTemplateBtn" class="ghost" type="button">
+                Descargar plantilla
+              </button>
+
+              <label class="file-button ghost">
+                Importar clientes
+                <input
+                  id="importClientsFile"
+                  type="file"
+                  accept=".csv,text/csv"
+                >
+              </label>
+            </div>
+
+            <small class="muted">
+              Columnas admitidas: ID, Nombre, Teléfono, Referencia, Dirección, Servicio, Mensualidad, Fecha de pago, Estado, Notas, Foto.
+            </small>
+
+          </article>
+
+
+          <article class="section-card data-tool">
+
+            <div class="tool-icon">▣</div>
+
+            <div>
+              <h3>Pagos</h3>
+              <p class="muted">
+                Exporta todo el historial de pagos registrado en Firebase para respaldarlo o trabajarlo en Excel.
+              </p>
+            </div>
+
+            <div class="tool-actions">
+              <button id="exportPaymentsBtn" class="primary" type="button">
+                Exportar pagos
+              </button>
+            </div>
+
+          </article>
+
+
+          <article class="section-card data-tool data-tool-wide">
+
+            <div class="tool-icon">◉</div>
+
+            <div>
+              <h3>Cargador masivo de imágenes</h3>
+              <p class="muted">
+                Selecciona varias fotografías o una carpeta completa. Se subirán a Firebase Storage. Si el nombre del archivo coincide con el ID o nombre del cliente, se asociará automáticamente; si no coincide, se guardará como recurso de tu cuenta.
+              </p>
+            </div>
+
+            <div class="image-upload-box">
+
+              <label class="file-button primary">
+                Seleccionar imágenes
+                <input
+                  id="bulkImagesFile"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                >
+              </label>
+
+              <label class="file-button ghost">
+                Seleccionar carpeta
+                <input
+                  id="bulkImagesFolder"
+                  type="file"
+                  accept="image/*"
+                  webkitdirectory
+                  directory
+                  multiple
+                >
+              </label>
+
+              <button id="uploadBulkImagesBtn" class="ghost" type="button">
+                Subir a Firebase
+              </button>
+
+            </div>
+
+            <div id="bulkImageProgress" class="upload-progress hidden">
+              <div class="progress-track">
+                <div id="bulkImageProgressBar" class="progress-bar"></div>
+              </div>
+              <span id="bulkImageProgressText">0 / 0</span>
+            </div>
+
+            <div
+              id="bulkImageList"
+              class="bulk-image-list empty-state"
+            >
+              Aún no has seleccionado imágenes.
+            </div>
+
+            <small class="muted">
+              Las fotos de clientes se guardan en <code>users/TU_USUARIO/clients/ID/profile</code>; las demás quedan en <code>users/TU_USUARIO/assets</code>.
+            </small>
+
+          </article>
+
+
+          <article class="section-card data-tool data-tool-wide">
+
+            <div class="tool-icon">✓</div>
+
+            <div>
+              <h3>Formato de importación</h3>
+              <p class="muted">
+                Para trabajar sin errores, usa la plantilla que genera el botón de exportación. En la columna <strong>Foto</strong> puedes poner el nombre del archivo que subirás con el cargador masivo.
+              </p>
+            </div>
+
+            <div class="import-rules">
+              <span>• No borra clientes existentes.</span>
+              <span>• Si viene un ID válido, actualiza ese cliente.</span>
+              <span>• Si no hay ID, crea uno nuevo.</span>
+              <span>• Las cantidades se convierten a número automáticamente.</span>
+            </div>
+
+          </article>
 
         </div>
 
