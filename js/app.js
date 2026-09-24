@@ -22,7 +22,8 @@ import {
   query,
   orderBy,
   onSnapshot,
-  serverTimestamp
+  serverTimestamp,
+  writeBatch
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
 import {
@@ -103,6 +104,481 @@ const escapeHtml = (s = "") =>
       "'": "&#039;"
     }[c])
   );
+
+/* =========================================================
+   DATOS / IMÁGENES / CSV
+========================================================= */
+
+const normalizeText = (value = "") =>
+  String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^a-z0-9]+/g, "");
+
+const csvEscape = (value = "") => {
+  const text = String(value ?? "");
+  return /[",\n\r]/.test(text)
+    ? `"${text.replace(/"/g, '""')}"`
+    : text;
+};
+
+const downloadText = (filename, content, mime = "text/csv;charset=utf-8") => {
+  const blob = new Blob(["\uFEFF", content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+const formatCsvDate = value => {
+  if (!value) return "";
+  if (value?.toDate) return isoDate(value.toDate());
+  return String(value);
+};
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+
+  text = String(text || "").replace(/^\uFEFF/, "");
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const next = text[i + 1];
+
+    if (quoted) {
+      if (ch === '"' && next === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') {
+        quoted = false;
+      } else {
+        cell += ch;
+      }
+    } else if (ch === '"') {
+      quoted = true;
+    } else if (ch === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (ch === "\n") {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else if (ch === "\r") {
+      if (next !== "\n") {
+        row.push(cell);
+        rows.push(row);
+        row = [];
+        cell = "";
+      }
+    } else {
+      cell += ch;
+    }
+  }
+
+  if (cell.length || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
+
+  return rows.filter(r => r.some(v => String(v).trim() !== ""));
+}
+
+function csvToObjects(text) {
+  const rows = parseCsv(text);
+  if (!rows.length) return [];
+
+  const headers = rows.shift().map(h => normalizeText(h));
+  return rows.map(row => {
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = row[i] ?? "");
+    return obj;
+  });
+}
+
+const CLIENT_CSV_HEADERS = [
+  "ID",
+  "Nombre",
+  "Teléfono",
+  "Referencia",
+  "Dirección",
+  "Servicio",
+  "Mensualidad",
+  "Fecha de pago",
+  "Estado",
+  "Notas",
+  "Foto"
+];
+
+function clientToCsvRow(c) {
+  return [
+    c.id || "",
+    c.name || "",
+    c.phone || "",
+    c.reference || "",
+    c.address || "",
+    c.service || "Internet",
+    Number(c.amount) || 0,
+    c.dueDate || "",
+    c.currentPaymentStatus || "pending",
+    c.notes || "",
+    c.photoName || ""
+  ].map(csvEscape).join(",");
+}
+
+function paymentToCsvRow(p) {
+  return [
+    p.id || "",
+    p.clientId || "",
+    p.clientName || "",
+    Number(p.amount) || 0,
+    p.paidDate || "",
+    p.month || "",
+    p.method || "",
+    p.note || ""
+  ].map(csvEscape).join(",");
+}
+
+function clientMatchesFile(client, filename) {
+  const key = normalizeText(filename);
+  return Boolean(
+    (client.id && normalizeText(client.id) === key) ||
+    (client.name && normalizeText(client.name) === key) ||
+    (client.reference && normalizeText(client.reference) === key)
+  );
+}
+
+let bulkImageFiles = [];
+
+function renderBulkImageList() {
+  const box = $("#bulkImageList");
+  if (!box) return;
+
+  if (!bulkImageFiles.length) {
+    box.className = "bulk-image-list empty-state";
+    box.textContent = "Aún no has seleccionado imágenes.";
+    return;
+  }
+
+  box.className = "bulk-image-list";
+  box.innerHTML = bulkImageFiles.map((file, i) => `
+    <div class="bulk-image-item">
+      <img src="${escapeHtml(URL.createObjectURL(file))}" alt="">
+      <div class="grow">
+        <strong>${escapeHtml(file.name)}</strong>
+        <span>${(file.size / 1024 / 1024).toFixed(2)} MB</span>
+      </div>
+      <span class="badge pending">${i + 1}</span>
+    </div>
+  `).join("");
+}
+
+function addBulkImageFiles(files) {
+  const accepted = [...files].filter(file =>
+    file.type.startsWith("image/")
+  );
+
+  const unique = new Map(
+    [...bulkImageFiles, ...accepted]
+      .map(file => [`${file.name}|${file.size}|${file.lastModified}`, file])
+  );
+
+  bulkImageFiles = [...unique.values()];
+  renderBulkImageList();
+}
+
+async function uploadClientImage(file, client) {
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error(`La imagen "${file.name}" supera 5 MB.`);
+  }
+
+  const clientRef = doc(
+    db,
+    "users",
+    currentUser.uid,
+    "clients",
+    client.id
+  );
+
+  const storageRef = ref(
+    storage,
+    `users/${currentUser.uid}/clients/${client.id}/profile`
+  );
+
+  await uploadBytes(storageRef, file, {
+    contentType: file.type,
+    customMetadata: {
+      clientId: client.id,
+      originalName: file.name
+    }
+  });
+
+  const url = await getDownloadURL(storageRef);
+
+  await updateDoc(clientRef, {
+    photoURL: url,
+    photoName: file.name,
+    updatedAt: serverTimestamp()
+  });
+
+  client.photoURL = url;
+  client.photoName = file.name;
+  return url;
+}
+
+async function uploadBulkImages() {
+  if (!currentUser) throw new Error("Tu sesión no está activa.");
+  if (!bulkImageFiles.length) throw new Error("Selecciona al menos una imagen.");
+
+  const progress = $("#bulkImageProgress");
+  const bar = $("#bulkImageProgressBar");
+  const label = $("#bulkImageProgressText");
+
+  progress?.classList.remove("hidden");
+
+  let done = 0;
+  let linked = 0;
+  let resources = 0;
+
+  for (const file of bulkImageFiles) {
+    if (file.size > 5 * 1024 * 1024) {
+      throw new Error(`La imagen "${file.name}" supera 5 MB.`);
+    }
+
+    const client = clients.find(c => clientMatchesFile(c, file.name));
+
+    if (client) {
+      await uploadClientImage(file, client);
+      linked++;
+    } else {
+      const assetId = normalizeText(file.name) || `asset-${Date.now()}`;
+      const safeName =
+        assetId +
+        "-" +
+        String(file.size);
+
+      const storageRef = ref(
+        storage,
+        `users/${currentUser.uid}/assets/${safeName}`
+      );
+
+      await uploadBytes(storageRef, file, {
+        contentType: file.type,
+        customMetadata: {
+          originalName: file.name
+        }
+      });
+
+      const url = await getDownloadURL(storageRef);
+
+      await setDoc(
+        doc(db, "users", currentUser.uid, "assets", assetId),
+        {
+          name: file.name,
+          normalizedName: assetId,
+          url,
+          storagePath: storageRef.fullPath,
+          size: file.size,
+          contentType: file.type,
+          updatedAt: serverTimestamp()
+        },
+        { merge: true }
+      );
+
+      resources++;
+    }
+
+    done++;
+
+    if (label) label.textContent = `${done} / ${bulkImageFiles.length}`;
+    if (bar) bar.style.width = `${(done / bulkImageFiles.length) * 100}%`;
+  }
+
+  bulkImageFiles = [];
+  renderBulkImageList();
+
+  toast(
+    `Listo: ${linked} fotos asociadas a clientes y ${resources} recursos guardados en Firebase.`
+  );
+}
+
+function exportClientsCsv() {
+  const content = [
+    CLIENT_CSV_HEADERS.join(","),
+    ...clients.map(clientToCsvRow)
+  ].join("\r\n");
+
+  downloadText(
+    `clientes-cahesa-${isoDate()}.csv`,
+    content
+  );
+}
+
+function downloadClientTemplate() {
+  const example = [
+    "EJEMPLO-001",
+    "Juan Pérez",
+    "9931234567",
+    "Centro",
+    "Calle Principal #10",
+    "Internet",
+    "300",
+    isoDate(),
+    "pending",
+    "Cliente de ejemplo",
+    "EJEMPLO-001.jpg"
+  ].map(csvEscape).join(",");
+
+  downloadText(
+    "plantilla-clientes-cahesa.csv",
+    `${CLIENT_CSV_HEADERS.join(",")}\r\n${example}\r\n`
+  );
+}
+
+function exportPaymentsCsv() {
+  const headers = [
+    "ID", "Cliente ID", "Cliente", "Monto",
+    "Fecha de pago", "Mes", "Método", "Nota"
+  ];
+
+  const content = [
+    headers.join(","),
+    ...payments.map(paymentToCsvRow)
+  ].join("\r\n");
+
+  downloadText(
+    `pagos-cahesa-${isoDate()}.csv`,
+    content
+  );
+}
+
+async function importClientsCsv(file) {
+  if (!currentUser) throw new Error("Tu sesión no está activa.");
+
+  const text = await file.text();
+  const rows = csvToObjects(text);
+
+  if (!rows.length) {
+    throw new Error("El archivo no contiene registros.");
+  }
+
+  const normalizedRows = rows.map(row => ({
+    id: row.id?.trim() || "",
+    name: row.nombre?.trim() || "",
+    phone: row.telefono?.trim() || "",
+    reference: row.referencia?.trim() || "",
+    address: row.direccion?.trim() || "",
+    service: row.servicio?.trim() || "Internet",
+    amount: Number(String(row.mensualidad || "0").replace(/[$,\s]/g, "")) || 0,
+    dueDate: row.fechadepago?.trim() || isoDate(),
+    currentPaymentStatus:
+      ["paid", "pagado"].includes((row.estado || "").trim().toLowerCase())
+        ? "paid"
+        : "pending",
+    notes: row.notas?.trim() || "",
+    photoName: row.foto?.trim() || ""
+  })).filter(row => row.name);
+
+  if (!normalizedRows.length) {
+    throw new Error("No encontré filas con nombre de cliente.");
+  }
+
+  let created = 0;
+  let updated = 0;
+
+  for (let start = 0; start < normalizedRows.length; start += 450) {
+    const chunk = normalizedRows.slice(start, start + 450);
+    const batch = writeBatch(db);
+
+    for (const row of chunk) {
+      let existing = null;
+
+      if (row.id) {
+        existing = clients.find(c => c.id === row.id) || null;
+      }
+
+      if (!existing) {
+        const normalizedName = normalizeText(row.name);
+        existing = clients.find(c =>
+          normalizeText(c.name) === normalizedName
+        ) || null;
+      }
+
+      const clientRef = existing
+        ? doc(db, "users", currentUser.uid, "clients", existing.id)
+        : doc(collection(db, "users", currentUser.uid, "clients"));
+
+      const data = {
+        name: row.name,
+        phone: row.phone,
+        reference: row.reference,
+        address: row.address,
+        service: row.service,
+        amount: row.amount,
+        dueDate: row.dueDate,
+        currentPaymentStatus: row.currentPaymentStatus,
+        notes: row.notes,
+        active: existing?.active !== false,
+        updatedAt: serverTimestamp()
+      };
+
+      if (row.photoName) {
+        const existingPhoto = existing?.photoURL || "";
+        if (existingPhoto) {
+          data.photoURL = existingPhoto;
+          data.photoName = row.photoName;
+        } else {
+          const assetId =
+            normalizeText(row.photoName);
+
+          if (assetId) {
+            try {
+              const assetSnap = await getDoc(
+                doc(
+                  db,
+                  "users",
+                  currentUser.uid,
+                  "assets",
+                  assetId
+                )
+              );
+
+              if (assetSnap.exists()) {
+                data.photoURL = assetSnap.data().url || "";
+                data.photoName = row.photoName;
+              }
+            } catch (assetErr) {
+              console.warn("No se pudo resolver la foto importada:", assetErr);
+            }
+          }
+        }
+      }
+
+      if (!existing) {
+        data.createdAt = serverTimestamp();
+        created++;
+      } else {
+        updated++;
+      }
+
+      batch.set(clientRef, data, { merge: true });
+    }
+
+    await batch.commit();
+  }
+
+  toast(`Importación terminada: ${created} nuevos, ${updated} actualizados.`);
+}
+
 
 
 /* =========================================================
@@ -1247,20 +1723,28 @@ async function uploadImage(file, path) {
 
 
   if (!file.type.startsWith("image/")) {
-
     throw new Error(
       "El archivo seleccionado no es una imagen."
     );
-
   }
 
-
   if (file.size > 5 * 1024 * 1024) {
-
     throw new Error(
       "La imagen debe pesar menos de 5 MB."
     );
+  }
 
+  const allowed = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif"
+  ];
+
+  if (!allowed.includes(file.type)) {
+    throw new Error(
+      "Formato no permitido. Usa JPG, PNG, WEBP o GIF."
+    );
   }
 
 
@@ -1499,6 +1983,8 @@ $("#clientForm").addEventListener(
             file,
             `users/${currentUser.uid}/clients/${clientRef.id}/profile`
           );
+
+        data.photoName = file.name;
 
       }
 
@@ -1782,8 +2268,85 @@ $("#paymentForm").addEventListener(
 
 
 /* =========================================================
+   DATOS / IMÁGENES
+========================================================= */
+
+$("#exportClientsBtn")?.addEventListener("click", () => {
+  try {
+    exportClientsCsv();
+    toast("Clientes exportados. Puedes abrir el CSV directamente con Excel.");
+  } catch (err) {
+    console.error("ERROR EXPORTANDO CLIENTES:", err);
+    toast(friendlyError(err), "error");
+  }
+});
+
+$("#downloadClientTemplateBtn")?.addEventListener("click", () => {
+  try {
+    downloadClientTemplate();
+    toast("Plantilla descargada.");
+  } catch (err) {
+    console.error("ERROR PLANTILLA:", err);
+    toast(friendlyError(err), "error");
+  }
+});
+
+$("#exportPaymentsBtn")?.addEventListener("click", () => {
+  try {
+    exportPaymentsCsv();
+    toast("Pagos exportados correctamente.");
+  } catch (err) {
+    console.error("ERROR EXPORTANDO PAGOS:", err);
+    toast(friendlyError(err), "error");
+  }
+});
+
+$("#importClientsFile")?.addEventListener("change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  showLoading(true);
+
+  try {
+    await importClientsCsv(file);
+    e.target.value = "";
+  } catch (err) {
+    console.error("ERROR IMPORTANDO CLIENTES:", err);
+    toast(friendlyError(err), "error");
+  } finally {
+    showLoading(false);
+  }
+});
+
+$("#bulkImagesFile")?.addEventListener("change", e => {
+  addBulkImageFiles(e.target.files);
+  e.target.value = "";
+});
+
+$("#bulkImagesFolder")?.addEventListener("change", e => {
+  addBulkImageFiles(e.target.files);
+  e.target.value = "";
+});
+
+$("#uploadBulkImagesBtn")?.addEventListener("click", async () => {
+  showLoading(true);
+
+  try {
+    await uploadBulkImages();
+  } catch (err) {
+    console.error("ERROR CARGA MASIVA IMÁGENES:", err);
+    toast(friendlyError(err), "error");
+  } finally {
+    showLoading(false);
+    setTimeout(() => $("#bulkImageProgress")?.classList.add("hidden"), 800);
+  }
+});
+
+
+/* =========================================================
    BOTONES / NAVEGACIÓN
 ========================================================= */
+
 
 document.addEventListener(
   "click",
@@ -1942,6 +2505,8 @@ function goSection(name) {
     payments: "Pagos",
 
     history: "Historial",
+
+    data: "Datos e imágenes",
 
     profile: "Mi perfil"
 
