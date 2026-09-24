@@ -946,6 +946,7 @@ function renderProfile() {
 
   const photo =
     profile.photoURL ||
+    currentUser?.photoURL ||
     "img/perfil.jpg";
 
 
@@ -2683,51 +2684,57 @@ $("#profilePhoto").addEventListener(
     const file =
       e.target.files[0];
 
-
     if (!file)
       return;
 
-
     showLoading(true);
-
 
     try {
 
+      // 1. Subimos primero la imagen a Firebase Storage.
       const url =
         await uploadImage(
           file,
           `users/${currentUser.uid}/profile/avatar`
         );
 
+      // 2. Guardamos la URL también en Firebase Authentication.
+      // Esto hace que la foto quede disponible aunque Firestore
+      // tenga temporalmente un problema con sus reglas.
+      await updateProfile(currentUser, {
+        photoURL: url
+      });
 
-      await updateDoc(
-        doc(
-          db,
-          "users",
-          currentUser.uid
-        ),
-        {
-
-          photoURL: url,
-
-          updatedAt:
-            serverTimestamp()
-
-        }
-      );
-
-
-      profile.photoURL =
-        url;
-
-
+      // 3. Actualizamos inmediatamente la interfaz.
+      profile.photoURL = url;
       renderProfile();
 
+      // 4. Intentamos mantener Firestore sincronizado.
+      // Si las reglas de Firestore están desactualizadas, la foto
+      // ya está guardada en Storage + Authentication y la app no
+      // debe mostrar un error ni revertir la imagen.
+      try {
+        await updateDoc(
+          doc(
+            db,
+            "users",
+            currentUser.uid
+          ),
+          {
+            photoURL: url,
+            updatedAt: serverTimestamp()
+          }
+        );
+      } catch (firestoreError) {
+        console.warn(
+          "La foto se guardó en Storage/Authentication, pero no se pudo sincronizar Firestore. Revisa sus reglas.",
+          firestoreError
+        );
+      }
 
       toast(
-        "Foto actualizada."
+        "Foto actualizada correctamente."
       );
-
 
     } catch (err) {
 
@@ -2736,22 +2743,21 @@ $("#profilePhoto").addEventListener(
         err
       );
 
-
       toast(
         friendlyError(err),
         "error"
       );
 
-
     } finally {
 
       showLoading(false);
 
-    }
+      // Permite volver a seleccionar la misma imagen.
+      e.target.value = "";
 
+    }
   }
 );
-
 
 /* =========================================================
    VERIFICACIÓN DE CORREO
