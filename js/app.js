@@ -990,26 +990,42 @@ onAuthStateChanged(
 
     try {
 
-      const snap =
-        await getDoc(
-          doc(
-            db,
-            "users",
-            user.uid
-          )
-        );
+      const profileRef = doc(db, "users", user.uid);
+      let snap = null;
 
+      try {
+        snap = await getDoc(profileRef);
+      } catch (profileErr) {
+        // No bloqueamos toda la aplicación si el perfil todavía no puede
+        // leerse. Authentication sigue siendo la fuente mínima de identidad.
+        console.warn("No se pudo leer el perfil de Firestore; usando Authentication como respaldo:", profileErr);
+      }
 
-      profile =
-        snap.exists()
-          ? snap.data()
-          : {
-              name: user.displayName || "",
-              email: user.email || ""
-            };
-
+      profile = snap?.exists()
+        ? snap.data()
+        : {
+            name: user.displayName || "",
+            email: user.email || "",
+            photoURL: user.photoURL || ""
+          };
 
       renderProfile();
+
+      // Intentamos crear/sincronizar el documento del perfil sin impedir
+      // que el resto de la aplicación arranque si las reglas aún no fueron
+      // publicadas correctamente.
+      if (!snap?.exists()) {
+        try {
+          await setDoc(profileRef, {
+            name: profile.name || "",
+            email: profile.email || "",
+            photoURL: profile.photoURL || "",
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        } catch (profileWriteErr) {
+          console.warn("No se pudo crear/sincronizar el perfil en Firestore:", profileWriteErr);
+        }
+      }
 
       subscribeData();
 
