@@ -48,3 +48,15 @@
   .network-actions #addNetworkBoxBtn{grid-column:1/-1}
   .network-actions button{width:100%;min-width:0}
 }
+
+/* =========================================================
+   CORRECCIÓN QUIRÚRGICA: MENÚ SOBRE EL MAPA
+   Leaflet usa z-index altos para sus capas; el menú móvil
+   debe permanecer siempre por encima del mapa.
+========================================================= */
+.sidebar{z-index:1000}
+@media(max-width:850px){
+  .topbar{position:sticky;top:0;z-index:900}
+  .topbar #openMenu{position:relative;z-index:901}
+  .sidebar{z-index:1100}
+}
