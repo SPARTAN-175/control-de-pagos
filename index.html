@@ -1386,6 +1386,7 @@
 
       <div class="dialog-actions">
         <button type="button" data-close-dialog="networkBoxDialog" class="ghost">Cancelar</button>
+        <button id="deactivateNetworkBoxBtn" type="button" class="ghost hidden">Dar de baja</button>
         <button id="deleteNetworkBoxBtn" type="button" class="danger-button hidden">Eliminar</button>
         <button id="saveNetworkBoxBtn" class="primary" type="submit">Guardar caja</button>
       </div>
@@ -1547,6 +1548,37 @@
           >
 
         </label>
+
+        <div class="full-row network-equipment-box">
+          <div class="network-equipment-title">Equipo instalado</div>
+          <p class="muted">Datos útiles para instalación, soporte y revisión del servicio.</p>
+          <div class="form-grid nested-form-grid">
+            <label>Tipo de equipo
+              <select id="clientEquipmentType">
+                <option value="ONU">ONU</option>
+                <option value="ONT">ONT</option>
+                <option value="Modem">Módem</option>
+                <option value="Router">Router</option>
+                <option value="Otro">Otro</option>
+              </select>
+            </label>
+            <label>Marca / modelo
+              <input id="clientEquipmentModel" type="text" placeholder="Ej. Huawei HG8546M">
+            </label>
+            <label>Número de serie
+              <input id="clientEquipmentSerial" type="text" placeholder="Serie del equipo">
+            </label>
+            <label>MAC / dirección física
+              <input id="clientEquipmentMac" type="text" placeholder="Ej. AA:BB:CC:DD:EE:FF">
+            </label>
+            <label>IP del equipo
+              <input id="clientEquipmentIp" type="text" placeholder="Ej. 192.168.1.1">
+            </label>
+            <label>SSID / Wi-Fi
+              <input id="clientEquipmentSsid" type="text" placeholder="Nombre de la red Wi-Fi">
+            </label>
+          </div>
+        </div>
 
 
         <div class="full-row location-actions">
