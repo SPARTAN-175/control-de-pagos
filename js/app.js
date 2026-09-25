@@ -69,6 +69,7 @@ let unsubNetworkBoxes = null;
 let networkMap = null;
 let networkMarkersLayer = null;
 let selectedNetworkBoxId = "";
+let pendingNetworkMapPlacement = null;
 
 let deferredInstall = null;
 
@@ -1519,6 +1520,13 @@ function renderClients() {
               </button>
 
               <button
+                class="danger-button small"
+                data-delete-client="${escapeHtml(c.id)}"
+              >
+                Eliminar
+              </button>
+
+              <button
                 class="primary"
                 data-pay="${escapeHtml(c.id)}"
               >
@@ -1757,6 +1765,7 @@ function openClientDialog(c = null) {
   $("#clientPhoto").value =
     "";
 
+  $("#deleteClientBtn")?.classList.toggle("hidden", !c);
 
   $("#clientDialog").showModal();
 
@@ -1781,6 +1790,7 @@ function useBrowserLocation(latId, lngId) {
 }
 
 $("#clientUseLocationBtn")?.addEventListener("click", () => useBrowserLocation("#clientLatitude", "#clientLongitude"));
+$("#deleteClientBtn")?.addEventListener("click", () => deleteClient($("#clientId").value));
 
 
 /* =========================================================
@@ -2139,6 +2149,26 @@ $("#clientForm").addEventListener(
 );
 
 
+async function deleteClient(clientId) {
+  if (!currentUser || !clientId) return;
+  const client = clients.find(c => c.id === clientId);
+  if (!client) return;
+  const confirmed = confirm(`¿Deseas eliminar a ${client.name || "este cliente"}?\n\nEsta acción eliminará el registro del cliente y no se puede deshacer. Los pagos históricos no se eliminarán automáticamente.`);
+  if (!confirmed) return;
+
+  try {
+    showLoading(true);
+    await deleteDoc(doc(db, "users", currentUser.uid, "clients", clientId));
+    if ($("#clientId")?.value === clientId && $("#clientDialog")?.open) $("#clientDialog").close();
+    toast("Cliente eliminado correctamente.");
+  } catch (err) {
+    console.error("ERROR ELIMINANDO CLIENTE:", err);
+    toast(friendlyError(err), "error");
+  } finally {
+    showLoading(false);
+  }
+}
+
 /* =========================================================
    DIALOGO DE PAGO
 ========================================================= */
@@ -2494,6 +2524,14 @@ document.addEventListener(
 
     }
 
+
+    /* Eliminar cliente */
+
+    const deleteClientBtn = e.target.closest("[data-delete-client]");
+    if (deleteClientBtn) {
+      deleteClient(deleteClientBtn.dataset.deleteClient);
+      return;
+    }
 
     /* Editar cliente */
 
@@ -2999,12 +3037,24 @@ function initNetworkMap() {
   const el = $("#networkMap");
   if (!el || typeof L === "undefined") return;
   if (!networkMap) {
-    networkMap = L.map(el, { zoomControl: true }).setView([19.4326, -99.1332], 13);
+    networkMap = L.map(el, { zoomControl: true }).setView([17.45, -93.35], 10);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(networkMap);
     networkMarkersLayer = L.layerGroup().addTo(networkMap);
+    networkMap.on("click", e => {
+      const lat = Number(e.latlng.lat.toFixed(7));
+      const lng = Number(e.latlng.lng.toFixed(7));
+      if (pendingNetworkMapPlacement) {
+        const box = pendingNetworkMapPlacement;
+        pendingNetworkMapPlacement = null;
+        openNetworkBoxDialog(box, { latitude: lat, longitude: lng });
+        toast("Punto colocado en el mapa. Revisa los datos y guarda la caja.");
+      } else {
+        toast("Toca «Elegir en mapa» desde el formulario de una caja para colocar su punto.");
+      }
+    });
   }
   setTimeout(() => networkMap.invalidateSize(), 80);
   renderNetworkMarkers();
@@ -3071,7 +3121,7 @@ function renderNetworkDetail() {
       <div class="port-grid">${Array.from({length: capacity}, (_,i) => {
         const port = i + 1;
         const c = occupiedPorts.get(port);
-        return `<button type="button" class="port-chip ${c ? "occupied" : "empty"}" ${c ? `data-focus-client="${escapeHtml(c.id)}"` : ""}>${port}${c ? `<small>${escapeHtml((c.name || "").split(" ")[0])}</small>` : "<small>Libre</small>"}</button>`;
+        return `<button type="button" class="port-chip ${c ? "occupied" : "empty"}" ${c ? `data-focus-client="${escapeHtml(c.id)}"` : `data-add-client-port="${port}"`}>${port}${c ? `<small>${escapeHtml((c.name || "").split(" ")[0])}</small>` : "<small>Agregar cliente</small>"}</button>`;
       }).join("")}</div>
     </div>
     ${box.address ? `<p class="muted"><strong>Referencia:</strong> ${escapeHtml(box.address)}</p>` : ""}
@@ -3089,7 +3139,7 @@ function renderNetworkMarkers() {
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
     const count = networkBoxClients(box.id).length;
     const marker = L.marker([lat, lng], {
-      icon: L.divIcon({ className: "", html: `<div class="network-marker-label">${escapeHtml(box.code || box.name || "Caja")}</div>`, iconSize: [90, 28], iconAnchor: [45, 14] })
+      icon: L.divIcon({ className: "", html: `<div class="network-marker-pin"><span>⌂</span><small>${escapeHtml(box.code || box.name || "Caja")}</small></div>`, iconSize: [100, 42], iconAnchor: [50, 36] })
     });
     marker.bindPopup(`<strong>${escapeHtml(box.name || "Caja")}</strong><br>${escapeHtml(box.code || "Sin código")}<br>${count}/${Number(box.capacity || 0)} puertos ocupados`);
     marker.on("click", () => { selectedNetworkBoxId = box.id; renderNetwork(); });
@@ -3104,7 +3154,7 @@ function renderNetworkMarkers() {
   });
 }
 
-function openNetworkBoxDialog(box = null) {
+function openNetworkBoxDialog(box = null, coordinateOverride = null) {
   $("#networkBoxDialogTitle").textContent = box ? "Editar caja de red" : "Nueva caja de red";
   $("#networkBoxId").value = box?.id || "";
   $("#networkBoxName").value = box?.name || "";
@@ -3112,11 +3162,20 @@ function openNetworkBoxDialog(box = null) {
   $("#networkBoxCapacity").value = box?.capacity ?? 8;
   $("#networkBoxStatus").value = box?.status || "active";
   $("#networkBoxAddress").value = box?.address || "";
-  $("#networkBoxLatitude").value = box?.latitude ?? "";
-  $("#networkBoxLongitude").value = box?.longitude ?? "";
+  $("#networkBoxLatitude").value = coordinateOverride?.latitude ?? box?.latitude ?? "";
+  $("#networkBoxLongitude").value = coordinateOverride?.longitude ?? box?.longitude ?? "";
   $("#networkBoxNotes").value = box?.notes || "";
   $("#deleteNetworkBoxBtn").classList.toggle("hidden", !box);
   $("#networkBoxDialog").showModal();
+}
+
+function chooseNetworkBoxLocation() {
+  const boxId = $("#networkBoxId").value || "";
+  const existing = boxId ? networkBoxes.find(b => b.id === boxId) : null;
+  pendingNetworkMapPlacement = existing || null;
+  $("#networkBoxDialog").close();
+  initNetworkMap();
+  toast("Ahora toca el mapa exactamente donde está la caja.");
 }
 
 async function saveNetworkBox(e) {
@@ -3210,6 +3269,7 @@ $("#seedNetworkExamplesBtn")?.addEventListener("click", seedNetworkExamples);
 $("#networkBoxForm")?.addEventListener("submit", saveNetworkBox);
 $("#deleteNetworkBoxBtn")?.addEventListener("click", deleteSelectedNetworkBox);
 $("#networkBoxUseLocationBtn")?.addEventListener("click", () => useBrowserLocation("#networkBoxLatitude", "#networkBoxLongitude"));
+$("#networkBoxPickMapBtn")?.addEventListener("click", chooseNetworkBoxLocation);
 
 $("#networkBoxesList")?.addEventListener("click", e => {
   const item = e.target.closest("[data-network-box]");
@@ -3225,6 +3285,18 @@ $("#networkBoxDetail")?.addEventListener("click", e => {
   if (edit) {
     const box = networkBoxes.find(b => b.id === edit.dataset.editNetworkBox);
     if (box) openNetworkBoxDialog(box);
+    return;
+  }
+  const addPort = e.target.closest("[data-add-client-port]");
+  if (addPort) {
+    const box = networkBoxes.find(b => b.id === selectedNetworkBoxId);
+    if (box) {
+      openClientDialog();
+      $("#clientNetworkBox").value = box.id;
+      $("#clientNetworkPort").value = Number(addPort.dataset.addClientPort);
+      $("#clientNetworkPort").dispatchEvent(new Event("change", { bubbles: true }));
+      toast(`Puerto ${addPort.dataset.addClientPort} seleccionado. Completa el mismo formulario de cliente.`);
+    }
     return;
   }
   const focus = e.target.closest("[data-focus-client]");
