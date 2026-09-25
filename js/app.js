@@ -57,6 +57,13 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 
 let currentUser = null;
+
+// CAHESA requiere una cuenta autenticada real. Una sesión anónima
+// no cuenta como sesión administrativa.
+function isCahesaAuthenticatedUser(user = currentUser) {
+  return Boolean(user && user.isAnonymous !== true);
+}
+
 let profile = {};
 let clients = [];
 let payments = [];
@@ -900,6 +907,36 @@ $("#resetForm").addEventListener(
 
 
 /* =========================================================
+   BLOQUEO ADMINISTRATIVO DE CAHESA
+
+   Ninguna acción del área privada puede ejecutarse sin una sesión
+   administrativa válida, incluso si el navegador conserva una vista
+   anterior o el usuario interactúa antes del callback de Authentication.
+========================================================= */
+document.addEventListener("click", event => {
+  const appView = document.getElementById("appView");
+  if (!appView || !appView.contains(event.target)) return;
+  if (isCahesaAuthenticatedUser()) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  setAppVisible(false);
+  toast("Debes iniciar sesión para administrar CAHESA.", "error");
+}, true);
+
+/* También bloqueamos formularios privados como última barrera del lado del cliente. */
+document.addEventListener("submit", event => {
+  const appView = document.getElementById("appView");
+  if (!appView || !appView.contains(event.target)) return;
+  if (isCahesaAuthenticatedUser()) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  setAppVisible(false);
+  toast("Debes iniciar sesión para administrar CAHESA.", "error");
+}, true);
+
+/* =========================================================
    CERRAR SESIÓN
 ========================================================= */
 
@@ -977,7 +1014,7 @@ onAuthStateChanged(
   auth,
   async user => {
 
-    if (!user) {
+    if (!user || user.isAnonymous) {
 
       currentUser = null;
 
