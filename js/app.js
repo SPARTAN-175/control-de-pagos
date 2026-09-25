@@ -2623,22 +2623,18 @@ $("#profileForm").addEventListener(
       }
 
 
-      await updateDoc(
+      await setDoc(
         doc(
           db,
           "users",
           currentUser.uid
         ),
         {
-
           name,
-
           phone,
-
-          updatedAt:
-            serverTimestamp()
-
-        }
+          updatedAt: serverTimestamp()
+        },
+        { merge: true }
       );
 
 
@@ -2730,7 +2726,7 @@ $("#profilePhoto").addEventListener(
       // ya está guardada en Storage + Authentication y la app no
       // debe mostrar un error ni revertir la imagen.
       try {
-        await updateDoc(
+        await setDoc(
           doc(
             db,
             "users",
@@ -2739,7 +2735,8 @@ $("#profilePhoto").addEventListener(
           {
             photoURL: url,
             updatedAt: serverTimestamp()
-          }
+          },
+          { merge: true }
         );
       } catch (firestoreError) {
         console.warn(
