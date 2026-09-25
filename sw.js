@@ -1,4 +1,4 @@
-const CACHE = "cahesa-control-pagos-v2";
+const CACHE = "cahesa-control-pagos-v3-red";
 
 const APP_SHELL = [
   "./",

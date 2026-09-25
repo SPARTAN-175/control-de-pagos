@@ -412,6 +412,15 @@
 
         <button
           class="nav-item"
+          data-section="network"
+          type="button"
+        >
+          <span>⌖</span>
+          Mapa de red
+        </button>
+
+        <button
+          class="nav-item"
           data-section="payments"
           type="button"
         >
@@ -767,6 +776,61 @@
       </section>
 
 
+
+
+      <!-- =================================================
+           MAPA DE RED
+           ================================================= -->
+
+      <section
+        id="networkSection"
+        class="page-section hidden"
+      >
+
+        <div class="page-head">
+          <div>
+            <h1>Mapa de red</h1>
+            <p class="muted">Administra cajas, puertos y ubicación de tus clientes.</p>
+          </div>
+          <div class="network-actions">
+            <button id="addNetworkBoxBtn" class="primary" type="button">+ Nueva caja</button>
+            <button id="seedNetworkExamplesBtn" class="ghost" type="button">Cargar ejemplos</button>
+          </div>
+        </div>
+
+        <div class="network-layout">
+          <div class="section-card network-map-card">
+            <div id="networkMap" class="network-map"></div>
+          </div>
+
+          <aside class="network-sidebar">
+            <div class="section-card">
+              <div class="section-head">
+                <div>
+                  <h3>Cajas de red</h3>
+                  <p class="muted">Selecciona una caja para ver sus puertos y clientes.</p>
+                </div>
+              </div>
+              <div id="networkBoxesList" class="network-box-list empty-state">No hay cajas registradas.</div>
+            </div>
+
+            <div id="networkBoxDetail" class="section-card network-detail-card">
+              <div class="empty-state">Selecciona una caja en el mapa o en la lista.</div>
+            </div>
+          </aside>
+        </div>
+
+        <div class="section-card network-client-location-card">
+          <div class="section-head">
+            <div>
+              <h3>Clientes ubicados</h3>
+              <p class="muted">Los clientes con latitud y longitud aparecen como puntos en el mapa.</p>
+            </div>
+            <span id="networkMapStats" class="network-stat">0 cajas · 0 clientes ubicados</span>
+          </div>
+        </div>
+
+      </section>
 
       <!-- =================================================
            CLIENTES
@@ -1289,6 +1353,46 @@
 
 
   <!-- =====================================================
+       MODAL NUEVA / EDITAR CAJA DE RED
+       ===================================================== -->
+
+  <dialog id="networkBoxDialog">
+    <form id="networkBoxForm" class="dialog-card">
+      <div class="dialog-head">
+        <div>
+          <h2 id="networkBoxDialogTitle">Nueva caja de red</h2>
+          <p class="muted">La información se guarda en tu espacio privado de Firebase.</p>
+        </div>
+        <button type="button" data-close-dialog="networkBoxDialog" class="icon-btn" aria-label="Cerrar">×</button>
+      </div>
+
+      <input type="hidden" id="networkBoxId">
+
+      <div class="form-grid">
+        <label>Nombre*<input id="networkBoxName" type="text" required placeholder="Ej. CTO Centro"></label>
+        <label>Código<input id="networkBoxCode" type="text" placeholder="Ej. CTO-001"></label>
+        <label>Capacidad de puertos*<input id="networkBoxCapacity" type="number" min="1" max="512" step="1" required value="8"></label>
+        <label>Estado<select id="networkBoxStatus"><option value="active">Activa</option><option value="maintenance">Mantenimiento</option><option value="inactive">Inactiva</option></select></label>
+        <label class="full-row">Dirección / referencia<input id="networkBoxAddress" type="text" placeholder="Referencia para localizarla"></label>
+        <label>Latitud*<input id="networkBoxLatitude" type="number" step="any" required placeholder="Ej. 19.4326"></label>
+        <label>Longitud*<input id="networkBoxLongitude" type="number" step="any" required placeholder="Ej. -99.1332"></label>
+        <div class="full-row location-actions">
+          <button id="networkBoxUseLocationBtn" class="ghost" type="button">Usar mi ubicación</button>
+          <small class="muted">Puedes colocar la ubicación exacta desde el teléfono.</small>
+        </div>
+        <label class="full-row">Notas<textarea id="networkBoxNotes" rows="3" placeholder="Detalles de instalación, poste, sector, etc."></textarea></label>
+      </div>
+
+      <div class="dialog-actions">
+        <button type="button" data-close-dialog="networkBoxDialog" class="ghost">Cancelar</button>
+        <button id="deleteNetworkBoxBtn" type="button" class="danger-button hidden">Eliminar</button>
+        <button id="saveNetworkBoxBtn" class="primary" type="submit">Guardar caja</button>
+      </div>
+    </form>
+  </dialog>
+
+
+  <!-- =====================================================
        MODAL NUEVO / EDITAR CLIENTE
        ===================================================== -->
 
@@ -1388,6 +1492,66 @@
           >
 
         </label>
+
+
+        <label>
+
+          Caja de red
+
+          <select id="clientNetworkBox">
+            <option value="">Sin asignar</option>
+          </select>
+
+        </label>
+
+
+        <label>
+
+          Puerto
+
+          <input
+            id="clientNetworkPort"
+            type="number"
+            min="1"
+            step="1"
+            placeholder="Ej. 1"
+          >
+
+        </label>
+
+
+        <label>
+
+          Latitud
+
+          <input
+            id="clientLatitude"
+            type="number"
+            step="any"
+            placeholder="Ej. 19.4326"
+          >
+
+        </label>
+
+
+        <label>
+
+          Longitud
+
+          <input
+            id="clientLongitude"
+            type="number"
+            step="any"
+            placeholder="Ej. -99.1332"
+          >
+
+        </label>
+
+
+        <div class="full-row location-actions">
+          <button id="clientUseLocationBtn" class="ghost" type="button">Usar mi ubicación</button>
+          <small class="muted">También puedes capturar las coordenadas manualmente.</small>
+        </div>
 
 
         <label>
@@ -1655,6 +1819,8 @@
   <!-- =====================================================
        JAVASCRIPT PRINCIPAL
        ===================================================== -->
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
   <script
     type="module"
