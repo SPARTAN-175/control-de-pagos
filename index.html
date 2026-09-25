@@ -1378,7 +1378,8 @@
         <label>Longitud*<input id="networkBoxLongitude" type="number" step="any" required placeholder="Ej. -99.1332"></label>
         <div class="full-row location-actions">
           <button id="networkBoxUseLocationBtn" class="ghost" type="button">Usar mi ubicación</button>
-          <small class="muted">Puedes colocar la ubicación exacta desde el teléfono.</small>
+          <button id="networkBoxPickMapBtn" class="ghost" type="button">Elegir en mapa</button>
+          <small class="muted">También puedes tocar el mapa para colocar el punto manualmente.</small>
         </div>
         <label class="full-row">Notas<textarea id="networkBoxNotes" rows="3" placeholder="Detalles de instalación, poste, sector, etc."></textarea></label>
       </div>
@@ -1655,6 +1656,14 @@
           Cancelar
         </button>
 
+
+        <button
+          id="deleteClientBtn"
+          type="button"
+          class="danger-button hidden"
+        >
+          Eliminar cliente
+        </button>
 
         <button
           id="saveClientBtn"
