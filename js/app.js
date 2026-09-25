@@ -19,6 +19,7 @@ import {
   collection,
   addDoc,
   updateDoc,
+  deleteDoc,
   query,
   orderBy,
   onSnapshot,
@@ -59,9 +60,15 @@ let currentUser = null;
 let profile = {};
 let clients = [];
 let payments = [];
+let networkBoxes = [];
 
 let unsubClients = null;
 let unsubPayments = null;
+let unsubNetworkBoxes = null;
+
+let networkMap = null;
+let networkMarkersLayer = null;
+let selectedNetworkBoxId = "";
 
 let deferredInstall = null;
 
@@ -975,6 +982,10 @@ onAuthStateChanged(
       if (unsubPayments)
         unsubPayments();
 
+      if (unsubNetworkBoxes)
+        unsubNetworkBoxes();
+
+      networkBoxes = [];
       setAppVisible(false);
 
       return;
@@ -1062,6 +1073,9 @@ function subscribeData() {
 
   if (unsubPayments)
     unsubPayments();
+
+  if (unsubNetworkBoxes)
+    unsubNetworkBoxes();
 
 
   /* ---------- CLIENTES ---------- */
@@ -1157,6 +1171,19 @@ function subscribeData() {
       }
     );
 
+
+  const aq = collection(db, "users", currentUser.uid, "assets");
+  unsubNetworkBoxes = onSnapshot(
+    aq,
+    snapshot => {
+      networkBoxes = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+        .filter(item => item.type === "networkBox")
+        .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "es"));
+      renderAll();
+    },
+    err => { console.error("ERROR CAJAS DE RED:", err); toast(friendlyError(err), "error"); }
+  );
+
   }
 
   
@@ -1205,6 +1232,7 @@ function renderAll() {
   renderClients();
   renderPayments();
   renderHistory();
+  renderNetwork();
 
 }
 
@@ -1698,6 +1726,12 @@ function openClientDialog(c = null) {
   $("#clientAddress").value =
     c?.address || "";
 
+  populateClientNetworkSelect();
+  $("#clientNetworkBox").value = c?.networkBoxId || "";
+  $("#clientNetworkPort").value = c?.networkPort ?? "";
+  $("#clientLatitude").value = c?.latitude ?? "";
+  $("#clientLongitude").value = c?.longitude ?? "";
+
 
   $("#clientService").value =
     c?.service || "Internet";
@@ -1727,6 +1761,26 @@ function openClientDialog(c = null) {
   $("#clientDialog").showModal();
 
 }
+
+
+function populateClientNetworkSelect() {
+  const select = $("#clientNetworkBox");
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = `<option value="">Sin asignar</option>` + networkBoxes.map(box => `<option value="${escapeHtml(box.id)}">${escapeHtml(box.name || box.code || box.id)}${box.code ? ` · ${escapeHtml(box.code)}` : ""}</option>`).join("");
+  if (current && networkBoxes.some(box => box.id === current)) select.value = current;
+}
+
+function useBrowserLocation(latId, lngId) {
+  if (!navigator.geolocation) { toast("Este dispositivo no permite obtener la ubicación.", "error"); return; }
+  navigator.geolocation.getCurrentPosition(position => {
+    $(latId).value = position.coords.latitude.toFixed(7);
+    $(lngId).value = position.coords.longitude.toFixed(7);
+    toast("Ubicación capturada correctamente.");
+  }, () => toast("No se pudo obtener la ubicación. Revisa el permiso de ubicación del navegador.", "error"), { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+}
+
+$("#clientUseLocationBtn")?.addEventListener("click", () => useBrowserLocation("#clientLatitude", "#clientLongitude"));
 
 
 /* =========================================================
@@ -1889,6 +1943,22 @@ $("#clientForm").addEventListener(
 
       }
 
+      const selectedBoxId = $("#clientNetworkBox").value || "";
+      const selectedPort = $("#clientNetworkPort").value ? Number($("#clientNetworkPort").value) : null;
+      const latitudeValue = $("#clientLatitude").value ? Number($("#clientLatitude").value) : null;
+      const longitudeValue = $("#clientLongitude").value ? Number($("#clientLongitude").value) : null;
+      if (selectedBoxId) {
+        const box = networkBoxes.find(b => b.id === selectedBoxId);
+        if (!box) throw new Error("La caja de red seleccionada ya no existe.");
+        if (!selectedPort || !Number.isInteger(selectedPort) || selectedPort < 1 || selectedPort > Number(box.capacity || 0)) throw new Error(`El puerto debe estar entre 1 y ${Number(box.capacity || 0)}.`);
+        if (clients.some(other => other.id !== id && other.networkBoxId === selectedBoxId && Number(other.networkPort) === selectedPort)) throw new Error("Ese puerto ya está asignado a otro cliente.");
+      } else if (selectedPort) {
+        throw new Error("Selecciona una caja antes de asignar un puerto.");
+      }
+      if ((latitudeValue !== null && !Number.isFinite(latitudeValue)) || (longitudeValue !== null && !Number.isFinite(longitudeValue))) throw new Error("Las coordenadas no son válidas.");
+      if ((latitudeValue === null) !== (longitudeValue === null)) throw new Error("Captura latitud y longitud juntas.");
+      if (latitudeValue !== null && (latitudeValue < -90 || latitudeValue > 90 || longitudeValue < -180 || longitudeValue > 180)) throw new Error("Las coordenadas están fuera de rango.");
+
 
       /* -----------------------------------------
          DATOS DEL CLIENTE
@@ -1912,6 +1982,11 @@ $("#clientForm").addEventListener(
           $("#clientAddress")
             .value
             .trim(),
+
+        networkBoxId: selectedBoxId,
+        networkPort: selectedPort,
+        latitude: latitudeValue,
+        longitude: longitudeValue,
 
         service:
           $("#clientService")
@@ -2519,6 +2594,8 @@ function goSection(name) {
 
     clients: "Clientes",
 
+    network: "Mapa de red",
+
     payments: "Pagos",
 
     history: "Historial",
@@ -2623,18 +2700,22 @@ $("#profileForm").addEventListener(
       }
 
 
-      await setDoc(
+      await updateDoc(
         doc(
           db,
           "users",
           currentUser.uid
         ),
         {
+
           name,
+
           phone,
-          updatedAt: serverTimestamp()
-        },
-        { merge: true }
+
+          updatedAt:
+            serverTimestamp()
+
+        }
       );
 
 
@@ -2726,7 +2807,7 @@ $("#profilePhoto").addEventListener(
       // ya está guardada en Storage + Authentication y la app no
       // debe mostrar un error ni revertir la imagen.
       try {
-        await setDoc(
+        await updateDoc(
           doc(
             db,
             "users",
@@ -2735,8 +2816,7 @@ $("#profilePhoto").addEventListener(
           {
             photoURL: url,
             updatedAt: serverTimestamp()
-          },
-          { merge: true }
+          }
         );
       } catch (firestoreError) {
         console.warn(
@@ -2902,3 +2982,271 @@ if (
   );
 
 }
+
+/* =========================================================
+   MAPA DE RED / INFRAESTRUCTURA
+========================================================= */
+
+function networkBoxClients(boxId) {
+  return clients.filter(c => c.networkBoxId === boxId && c.active !== false);
+}
+
+function networkStatusLabel(status) {
+  return status === "maintenance" ? "Mantenimiento" : status === "inactive" ? "Inactiva" : "Activa";
+}
+
+function initNetworkMap() {
+  const el = $("#networkMap");
+  if (!el || typeof L === "undefined") return;
+  if (!networkMap) {
+    networkMap = L.map(el, { zoomControl: true }).setView([19.4326, -99.1332], 13);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(networkMap);
+    networkMarkersLayer = L.layerGroup().addTo(networkMap);
+  }
+  setTimeout(() => networkMap.invalidateSize(), 80);
+  renderNetworkMarkers();
+}
+
+function renderNetwork() {
+  const list = $("#networkBoxesList");
+  const detail = $("#networkBoxDetail");
+  const stats = $("#networkMapStats");
+  if (!list || !detail || !stats) return;
+
+  populateClientNetworkSelect();
+  const locatedClients = clients.filter(c => Number.isFinite(Number(c.latitude)) && Number.isFinite(Number(c.longitude)));
+  stats.textContent = `${networkBoxes.length} ${networkBoxes.length === 1 ? "caja" : "cajas"} · ${locatedClients.length} ${locatedClients.length === 1 ? "cliente ubicado" : "clientes ubicados"}`;
+
+  if (!networkBoxes.length) {
+    list.className = "network-box-list empty-state";
+    list.textContent = "No hay cajas registradas.";
+    detail.innerHTML = `<div class="empty-state">Crea una caja para comenzar a construir tu mapa de red.</div>`;
+  } else {
+    list.className = "network-box-list";
+    list.innerHTML = networkBoxes.map(box => {
+      const count = networkBoxClients(box.id).length;
+      const active = box.id === selectedNetworkBoxId ? " active" : "";
+      const status = box.status || "active";
+      return `<button type="button" class="network-box-item${active}" data-network-box="${escapeHtml(box.id)}">
+        <span class="network-box-dot ${status}"></span>
+        <span class="grow"><strong>${escapeHtml(box.name || "Caja sin nombre")}</strong><span>${escapeHtml(box.code || "Sin código")} · ${count}/${Number(box.capacity || 0)} puertos ocupados</span></span>
+      </button>`;
+    }).join("");
+  }
+
+  if (selectedNetworkBoxId && !networkBoxes.some(b => b.id === selectedNetworkBoxId)) selectedNetworkBoxId = "";
+  renderNetworkDetail();
+  renderNetworkMarkers();
+}
+
+function renderNetworkDetail() {
+  const detail = $("#networkBoxDetail");
+  if (!detail) return;
+  const box = networkBoxes.find(b => b.id === selectedNetworkBoxId);
+  if (!box) {
+    detail.innerHTML = `<div class="empty-state">Selecciona una caja en el mapa o en la lista.</div>`;
+    return;
+  }
+
+  const capacity = Math.max(1, Number(box.capacity || 1));
+  const connected = networkBoxClients(box.id).sort((a,b) => Number(a.networkPort || 0) - Number(b.networkPort || 0));
+  const occupiedPorts = new Map(connected.filter(c => c.networkPort).map(c => [Number(c.networkPort), c]));
+  const free = Math.max(0, capacity - occupiedPorts.size);
+
+  detail.innerHTML = `
+    <div class="section-head">
+      <div><h3>${escapeHtml(box.name || "Caja de red")}</h3><p class="muted">${escapeHtml(box.code || "Sin código")} · ${networkStatusLabel(box.status)}</p></div>
+      <button type="button" class="ghost small" data-edit-network-box="${escapeHtml(box.id)}">Editar</button>
+    </div>
+    <div class="network-detail-meta">
+      <div><strong>${occupiedPorts.size}</strong><span>Puertos ocupados</span></div>
+      <div><strong>${free}</strong><span>Puertos libres</span></div>
+      <div><strong>${capacity}</strong><span>Capacidad</span></div>
+      <div><strong>${connected.length}</strong><span>Clientes</span></div>
+    </div>
+    <div><strong>Puertos</strong>
+      <div class="port-grid">${Array.from({length: capacity}, (_,i) => {
+        const port = i + 1;
+        const c = occupiedPorts.get(port);
+        return `<button type="button" class="port-chip ${c ? "occupied" : "empty"}" ${c ? `data-focus-client="${escapeHtml(c.id)}"` : ""}>${port}${c ? `<small>${escapeHtml((c.name || "").split(" ")[0])}</small>` : "<small>Libre</small>"}</button>`;
+      }).join("")}</div>
+    </div>
+    ${box.address ? `<p class="muted"><strong>Referencia:</strong> ${escapeHtml(box.address)}</p>` : ""}
+    ${box.notes ? `<p class="muted"><strong>Notas:</strong> ${escapeHtml(box.notes)}</p>` : ""}
+    <div class="network-client-list">${connected.length ? connected.map(c => `<button type="button" class="network-client-row" data-focus-client="${escapeHtml(c.id)}"><strong>${escapeHtml(c.name)}</strong><span>Puerto ${Number(c.networkPort || 0) || "sin asignar"}${c.phone ? ` · ${escapeHtml(c.phone)}` : ""}</span></button>`).join("") : `<div class="empty-state">Todavía no hay clientes conectados.</div>`}</div>
+  `;
+}
+
+function renderNetworkMarkers() {
+  if (!networkMap || !networkMarkersLayer) return;
+  networkMarkersLayer.clearLayers();
+
+  networkBoxes.forEach(box => {
+    const lat = Number(box.latitude), lng = Number(box.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const count = networkBoxClients(box.id).length;
+    const marker = L.marker([lat, lng], {
+      icon: L.divIcon({ className: "", html: `<div class="network-marker-label">${escapeHtml(box.code || box.name || "Caja")}</div>`, iconSize: [90, 28], iconAnchor: [45, 14] })
+    });
+    marker.bindPopup(`<strong>${escapeHtml(box.name || "Caja")}</strong><br>${escapeHtml(box.code || "Sin código")}<br>${count}/${Number(box.capacity || 0)} puertos ocupados`);
+    marker.on("click", () => { selectedNetworkBoxId = box.id; renderNetwork(); });
+    marker.addTo(networkMarkersLayer);
+  });
+
+  clients.filter(c => Number.isFinite(Number(c.latitude)) && Number.isFinite(Number(c.longitude))).forEach(c => {
+    const marker = L.circleMarker([Number(c.latitude), Number(c.longitude)], { radius: 7, weight: 2, fillOpacity: .9 });
+    const box = networkBoxes.find(b => b.id === c.networkBoxId);
+    marker.bindPopup(`<strong>${escapeHtml(c.name || "Cliente")}</strong><br>${box ? `${escapeHtml(box.name)} · Puerto ${Number(c.networkPort || 0) || "—"}` : "Sin caja asignada"}`);
+    marker.addTo(networkMarkersLayer);
+  });
+}
+
+function openNetworkBoxDialog(box = null) {
+  $("#networkBoxDialogTitle").textContent = box ? "Editar caja de red" : "Nueva caja de red";
+  $("#networkBoxId").value = box?.id || "";
+  $("#networkBoxName").value = box?.name || "";
+  $("#networkBoxCode").value = box?.code || "";
+  $("#networkBoxCapacity").value = box?.capacity ?? 8;
+  $("#networkBoxStatus").value = box?.status || "active";
+  $("#networkBoxAddress").value = box?.address || "";
+  $("#networkBoxLatitude").value = box?.latitude ?? "";
+  $("#networkBoxLongitude").value = box?.longitude ?? "";
+  $("#networkBoxNotes").value = box?.notes || "";
+  $("#deleteNetworkBoxBtn").classList.toggle("hidden", !box);
+  $("#networkBoxDialog").showModal();
+}
+
+async function saveNetworkBox(e) {
+  e.preventDefault();
+  if (!currentUser) return;
+  const btn = $("#saveNetworkBoxBtn");
+  btn.disabled = true;
+  btn.textContent = "Guardando...";
+  try {
+    const id = $("#networkBoxId").value;
+    const name = $("#networkBoxName").value.trim();
+    const code = $("#networkBoxCode").value.trim();
+    const capacity = Number($("#networkBoxCapacity").value);
+    const latitude = Number($("#networkBoxLatitude").value);
+    const longitude = Number($("#networkBoxLongitude").value);
+    if (!name) throw new Error("Escribe el nombre de la caja.");
+    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 512) throw new Error("La capacidad debe ser un número entero entre 1 y 512.");
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) throw new Error("Captura coordenadas válidas.");
+    const existing = id ? networkBoxes.find(b => b.id === id) : null;
+    const connected = existing ? networkBoxClients(id) : [];
+    if (connected.some(c => Number(c.networkPort) > capacity)) throw new Error("No puedes reducir la capacidad porque hay clientes conectados en puertos superiores.");
+    const refDoc = id ? doc(db, "users", currentUser.uid, "assets", id) : doc(collection(db, "users", currentUser.uid, "assets"));
+    await setDoc(refDoc, {
+      type: "networkBox", name, code, capacity,
+      status: $("#networkBoxStatus").value,
+      address: $("#networkBoxAddress").value.trim(),
+      latitude, longitude,
+      notes: $("#networkBoxNotes").value.trim(),
+      updatedAt: serverTimestamp(),
+      ...(existing ? {} : { createdAt: serverTimestamp() })
+    }, { merge: true });
+    selectedNetworkBoxId = refDoc.id;
+    $("#networkBoxDialog").close();
+    toast(id ? "Caja actualizada correctamente." : "Caja creada correctamente.");
+  } catch (err) {
+    console.error("ERROR CAJA DE RED:", err);
+    toast(friendlyError(err), "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Guardar caja";
+  }
+}
+
+async function deleteSelectedNetworkBox() {
+  const id = $("#networkBoxId").value;
+  if (!id || !currentUser) return;
+  if (networkBoxClients(id).length) {
+    toast("No se puede eliminar una caja que todavía tiene clientes conectados. Primero reasigna esos clientes.", "error");
+    return;
+  }
+  if (!confirm("¿Eliminar esta caja de red? Esta acción no se puede deshacer.")) return;
+  try {
+    await deleteDoc(doc(db, "users", currentUser.uid, "assets", id));
+    if (selectedNetworkBoxId === id) selectedNetworkBoxId = "";
+    $("#networkBoxDialog").close();
+    toast("Caja eliminada.");
+  } catch (err) {
+    console.error("ERROR ELIMINANDO CAJA:", err);
+    toast(friendlyError(err), "error");
+  }
+}
+
+async function seedNetworkExamples() {
+  if (!currentUser) return;
+  if (networkBoxes.length) {
+    toast("Ya tienes cajas registradas. Los ejemplos no se agregaron.", "error");
+    return;
+  }
+  const examples = [
+    { name: "Caja Principal", code: "CTO-001", capacity: 8, status: "active", latitude: 19.4326, longitude: -99.1332, address: "Ejemplo de ubicación", notes: "Caja de demostración" },
+    { name: "Caja Norte", code: "CTO-002", capacity: 16, status: "active", latitude: 19.4380, longitude: -99.1260, address: "Ejemplo de ubicación", notes: "Segunda caja de demostración" },
+    { name: "Caja Sur", code: "CTO-003", capacity: 8, status: "maintenance", latitude: 19.4255, longitude: -99.1390, address: "Ejemplo de ubicación", notes: "Ejemplo en mantenimiento" }
+  ];
+  try {
+    showLoading(true);
+    for (const item of examples) {
+      const r = doc(collection(db, "users", currentUser.uid, "assets"));
+      await setDoc(r, { ...item, type: "networkBox", createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    }
+    toast("Se agregaron 3 cajas de ejemplo.");
+  } catch (err) {
+    console.error("ERROR EJEMPLOS RED:", err);
+    toast(friendlyError(err), "error");
+  } finally {
+    showLoading(false);
+  }
+}
+
+$("#addNetworkBoxBtn")?.addEventListener("click", () => openNetworkBoxDialog());
+$("#seedNetworkExamplesBtn")?.addEventListener("click", seedNetworkExamples);
+$("#networkBoxForm")?.addEventListener("submit", saveNetworkBox);
+$("#deleteNetworkBoxBtn")?.addEventListener("click", deleteSelectedNetworkBox);
+$("#networkBoxUseLocationBtn")?.addEventListener("click", () => useBrowserLocation("#networkBoxLatitude", "#networkBoxLongitude"));
+
+$("#networkBoxesList")?.addEventListener("click", e => {
+  const item = e.target.closest("[data-network-box]");
+  if (!item) return;
+  selectedNetworkBoxId = item.dataset.networkBox;
+  renderNetwork();
+  const box = networkBoxes.find(b => b.id === selectedNetworkBoxId);
+  if (box && networkMap && Number.isFinite(Number(box.latitude)) && Number.isFinite(Number(box.longitude))) networkMap.setView([Number(box.latitude), Number(box.longitude)], Math.max(networkMap.getZoom(), 16));
+});
+
+$("#networkBoxDetail")?.addEventListener("click", e => {
+  const edit = e.target.closest("[data-edit-network-box]");
+  if (edit) {
+    const box = networkBoxes.find(b => b.id === edit.dataset.editNetworkBox);
+    if (box) openNetworkBoxDialog(box);
+    return;
+  }
+  const focus = e.target.closest("[data-focus-client]");
+  if (focus) {
+    const client = clients.find(c => c.id === focus.dataset.focusClient);
+    if (client && networkMap && Number.isFinite(Number(client.latitude)) && Number.isFinite(Number(client.longitude))) {
+      networkMap.setView([Number(client.latitude), Number(client.longitude)], 17);
+      L.popup().setLatLng([Number(client.latitude), Number(client.longitude)]).setContent(`<strong>${escapeHtml(client.name)}</strong>`).openOn(networkMap);
+    } else if (client) toast("Este cliente todavía no tiene coordenadas.", "error");
+  }
+});
+
+$("#clientNetworkBox")?.addEventListener("change", e => {
+  const box = networkBoxes.find(b => b.id === e.target.value);
+  const port = $("#clientNetworkPort");
+  if (!box) { port.removeAttribute("max"); port.placeholder = "Ej. 1"; return; }
+  port.max = Number(box.capacity || 0);
+  port.placeholder = `1 a ${Number(box.capacity || 0)}`;
+});
+
+const _goSectionOriginal = goSection;
+goSection = function(name) {
+  _goSectionOriginal(name);
+  if (name === "network") initNetworkMap();
+};
