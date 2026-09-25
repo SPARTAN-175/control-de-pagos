@@ -67,6 +67,10 @@ let unsubPayments = null;
 let unsubNetworkBoxes = null;
 
 let networkMap = null;
+let networkSatelliteLayer = null;
+let networkStreetLayer = null;
+let networkMapMode = "map";
+let networkSatelliteOn = false;
 let networkMarkersLayer = null;
 let selectedNetworkBoxId = "";
 let pendingNetworkMapPlacement = null;
@@ -3050,10 +3054,14 @@ function initNetworkMap() {
   if (!el || typeof L === "undefined") return;
   if (!networkMap) {
     networkMap = L.map(el, { zoomControl: true }).setView([17.45, -93.35], 10);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    networkStreetLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(networkMap);
+    networkSatelliteLayer = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+      maxZoom: 19,
+      attribution: 'Tiles &copy; Esri'
+    });
     networkMarkersLayer = L.layerGroup().addTo(networkMap);
     networkMap.on("click", e => {
       const lat = Number(e.latlng.lat.toFixed(7));
@@ -3063,8 +3071,6 @@ function initNetworkMap() {
         pendingNetworkMapPlacement = null;
         openNetworkBoxDialog(target.isNew ? null : target.box, { latitude: lat, longitude: lng });
         toast("Punto colocado en el mapa. Revisa los datos y guarda la caja.");
-      } else {
-        toast("Toca «Elegir en mapa» desde el formulario de una caja para colocar su punto.");
       }
     });
   }
@@ -3158,7 +3164,12 @@ function renderNetworkMarkers() {
     marker.addTo(networkMarkersLayer);
   });
 
-  clients.filter(c => Number.isFinite(Number(c.latitude)) && Number.isFinite(Number(c.longitude))).forEach(c => {
+  clients.filter(c => {
+    const located = Number.isFinite(Number(c.latitude)) && Number.isFinite(Number(c.longitude));
+    if (!located) return false;
+    if (networkMapMode !== "connections") return true;
+    return Boolean(networkBoxes.find(b => b.id === c.networkBoxId));
+  }).forEach(c => {
     const lat = Number(c.latitude), lng = Number(c.longitude);
     const box = networkBoxes.find(b => b.id === c.networkBoxId);
     const equipment = [c.equipmentType, c.equipmentModel].filter(Boolean).join(" · ") || "Equipo no registrado";
@@ -3179,9 +3190,9 @@ function renderNetworkMarkers() {
 
     if (box && Number.isFinite(Number(box.latitude)) && Number.isFinite(Number(box.longitude))) {
       const line = L.polyline([[Number(box.latitude), Number(box.longitude)], [lat, lng]], {
-        weight: 2,
-        opacity: 0.65,
-        dashArray: "7 7"
+        weight: networkMapMode === "connections" ? 4 : 2,
+        opacity: networkMapMode === "connections" ? 0.9 : 0.65,
+        dashArray: networkMapMode === "connections" ? null : "7 7"
       });
       line.bindPopup(`<strong>${escapeHtml(box.name || "Caja")}</strong> → <strong>${escapeHtml(c.name || "Cliente")}</strong><br>Puerto ${Number(c.networkPort || 0) || "—"}`);
       line.addTo(networkMarkersLayer);
@@ -3321,7 +3332,49 @@ async function seedNetworkExamples() {
   }
 }
 
-$("#addNetworkBoxBtn")?.addEventListener("click", () => openNetworkBoxDialog());
+$("#addNetworkBoxBtn")?.addEventListener("click", () => {
+  pendingNetworkMapPlacement = { isNew: true, box: null };
+  initNetworkMap();
+  toast("Toca el mapa donde está la caja y se abrirá el formulario con las coordenadas listas.");
+});
+$("#networkMapViewBtn")?.addEventListener("click", () => {
+  networkMapMode = "map";
+  $("#networkMapViewBtn")?.classList.add("active");
+  $("#networkConnectionsViewBtn")?.classList.remove("active");
+  renderNetworkMarkers();
+});
+$("#networkConnectionsViewBtn")?.addEventListener("click", () => {
+  networkMapMode = "connections";
+  $("#networkConnectionsViewBtn")?.classList.add("active");
+  $("#networkMapViewBtn")?.classList.remove("active");
+  renderNetworkMarkers();
+  if (networkMap) {
+    const points = [];
+    networkBoxes.forEach(b => {
+      if (Number.isFinite(Number(b.latitude)) && Number.isFinite(Number(b.longitude))) points.push([Number(b.latitude), Number(b.longitude)]);
+      networkBoxClients(b.id).forEach(c => {
+        if (Number.isFinite(Number(c.latitude)) && Number.isFinite(Number(c.longitude))) points.push([Number(c.latitude), Number(c.longitude)]);
+      });
+    });
+    if (points.length > 1) networkMap.fitBounds(points, { padding: [30, 30], maxZoom: 17 });
+    else if (points.length === 1) networkMap.setView(points[0], 17);
+  }
+});
+$("#networkSatelliteBtn")?.addEventListener("click", () => {
+  if (!networkMap || !networkStreetLayer || !networkSatelliteLayer) return;
+  networkSatelliteOn = !networkSatelliteOn;
+  if (networkSatelliteOn) {
+    networkMap.removeLayer(networkStreetLayer);
+    networkSatelliteLayer.addTo(networkMap);
+    $("#networkSatelliteBtn").classList.add("active");
+    $("#networkSatelliteBtn").textContent = "Mapa";
+  } else {
+    networkMap.removeLayer(networkSatelliteLayer);
+    networkStreetLayer.addTo(networkMap);
+    $("#networkSatelliteBtn").classList.remove("active");
+    $("#networkSatelliteBtn").textContent = "Satélite";
+  }
+});
 $("#seedNetworkExamplesBtn")?.addEventListener("click", seedNetworkExamples);
 $("#networkBoxForm")?.addEventListener("submit", saveNetworkBox);
 $("#deleteNetworkBoxBtn")?.addEventListener("click", deleteSelectedNetworkBox);
