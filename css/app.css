@@ -109,8 +109,69 @@
 .payment-calendar thead th{white-space:nowrap}
 @media(max-width:600px){.payment-calendar-scroll{max-width:100%;overflow-x:auto}.payment-calendar-client{position:sticky;left:0}.field-hint{font-size:10.5px}}
 
-
 /* =========================================================
-   MAPA DE RED · KML + LOCALIDADES + BUSCADOR
+   CAHESA CONNECTOR / MIKROTIK
 ========================================================= */
-.network-filters{display:grid;grid-template-columns:1fr 1.25fr;gap:9px;margin:12px 0 8px}.network-filter-field{display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:750;color:#475569}.network-filter-field input,.network-filter-field select{width:100%;border:1px solid #d8dee9;border-radius:10px;padding:10px 11px;background:#fff;outline:none}.network-filter-field input:focus,.network-filter-field select:focus{border-color:#475569;box-shadow:0 0 0 3px rgba(71,85,105,.1)}.network-locality-actions{display:flex;justify-content:flex-end;margin-bottom:8px}.small-text{font-size:11px}.network-locality-manager{display:flex;flex-direction:column;gap:12px}.network-locality-add{display:grid;grid-template-columns:1fr auto;gap:8px}.network-locality-add input{border:1px solid #d8dee9;border-radius:10px;padding:11px 12px}.network-locality-import-actions{display:flex;gap:8px;flex-wrap:wrap}.network-localities-list{display:flex;flex-direction:column;gap:7px;max-height:320px;overflow:auto;padding:2px}.network-locality-item{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #e7ebf2;border-radius:10px;padding:9px 10px;background:#f8fafc}.network-locality-item span{font-weight:700}.network-mini-popup{display:flex;flex-direction:column;gap:3px;min-width:170px;font-size:11px}.network-mini-popup strong{font-size:14px;color:#172033;margin-bottom:2px}.network-mini-popup span{color:#64748b}.network-box-item{min-width:0}.network-box-item .grow{min-width:0}.network-box-item .grow strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.network-box-item .grow span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}@media(max-width:600px){.network-filters{grid-template-columns:1fr}.network-locality-add{grid-template-columns:1fr}.network-locality-add button,.network-locality-import-actions button{width:100%}.network-locality-import-actions{display:grid;grid-template-columns:1fr}.network-locality-actions{justify-content:stretch}.network-locality-actions button{width:100%}}
+.connector-card { margin-top: 18px; }
+.connector-head { align-items: flex-start; gap: 16px; }
+.connector-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  border: 1px solid var(--border, #d8dee8);
+}
+.connector-status-badge.online { background: #eaf8ef; color: #147a3d; border-color: #b9e5c9; }
+.connector-status-badge.waiting { background: #fff8df; color: #8a6500; border-color: #f0dda0; }
+.connector-status-badge.offline { background: #f3f4f6; color: #68707d; }
+.connector-status-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+.connector-status-grid > div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border, #d8dee8);
+  border-radius: 12px;
+  background: var(--surface-soft, #f8fafc);
+}
+.connector-status-grid strong,
+.connector-status-grid span { display: block; }
+.connector-status-grid strong { font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.connector-status-grid span { margin-top: 3px; font-size: .76rem; color: var(--muted, #6b7280); }
+.connector-pairing-area {
+  padding: 14px;
+  border: 1px dashed var(--border, #d8dee8);
+  border-radius: 14px;
+  background: var(--surface-soft, #fafbfc);
+}
+.connector-code-wrap {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.connector-code-wrap span { font-size: .76rem; color: var(--muted, #6b7280); }
+.connector-code-wrap strong {
+  font-size: clamp(1.25rem, 3vw, 1.8rem);
+  letter-spacing: .12em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.connector-code-wrap small { color: var(--muted, #6b7280); }
+.connector-info { margin-top: 12px; font-size: .86rem; }
+
+@media (max-width: 900px) {
+  .connector-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .connector-head { flex-direction: column; }
+  .connector-status-grid { grid-template-columns: 1fr 1fr; }
+  .connector-pairing-area .primary { width: 100%; }
+}
