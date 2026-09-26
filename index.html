@@ -800,8 +800,6 @@
           </div>
           <div class="network-actions">
             <button id="addNetworkBoxBtn" class="primary" type="button">+ Nueva caja</button>
-            <button id="importNetworkKmlBtn" class="ghost" type="button">Importar KML</button>
-            <input id="importNetworkKmlFile" type="file" accept=".kml,.xml,application/vnd.google-earth.kml+xml,text/xml" hidden>
             <button id="networkMapViewBtn" class="ghost active" type="button">Mapa</button>
             <button id="networkConnectionsViewBtn" class="ghost" type="button">Conexiones</button>
             <button id="networkSatelliteBtn" class="ghost" type="button">Satélite</button>
@@ -819,21 +817,8 @@
               <div class="section-head">
                 <div>
                   <h3>Cajas de red</h3>
-                  <p class="muted">Filtra por localidad o busca una caja para ubicarla automáticamente.</p>
+                  <p class="muted">Selecciona una caja para ver sus puertos y clientes.</p>
                 </div>
-              </div>
-              <div class="network-filters">
-                <label class="network-filter-field">Localidad
-                  <select id="networkLocalityFilter">
-                    <option value="">Todas las localidades</option>
-                  </select>
-                </label>
-                <label class="network-filter-field">Buscar caja
-                  <input id="networkBoxSearch" type="search" placeholder="Nombre, código o dirección">
-                </label>
-              </div>
-              <div class="network-locality-actions">
-                <button id="manageNetworkLocalitiesBtn" class="ghost small" type="button">Gestionar localidades</button>
               </div>
               <div id="networkBoxesList" class="network-box-list empty-state">No hay cajas registradas.</div>
             </div>
@@ -1362,6 +1347,38 @@
 
         <!-- SEGURIDAD -->
 
+        <!-- INTEGRACIÓN MIKROTIK / CAHESA CONNECTOR -->
+        <div class="section-card connector-card">
+          <div class="section-head connector-head">
+            <div>
+              <h3>🔌 Conexión con MikroTik</h3>
+              <p class="muted">Conecta un CAHESA Connector instalado en una computadora dentro de tu red.</p>
+            </div>
+            <span id="connectorStatusBadge" class="connector-status-badge offline">Sin conectar</span>
+          </div>
+
+          <div class="connector-status-grid">
+            <div><strong id="connectorDeviceName">—</strong><span>Connector</span></div>
+            <div><strong id="connectorMikrotik">—</strong><span>MikroTik</span></div>
+            <div><strong id="connectorPppSecrets">—</strong><span>PPPoE</span></div>
+            <div><strong id="connectorPppActive">—</strong><span>Activos</span></div>
+            <div><strong id="connectorPppDisabled">—</strong><span>Suspendidos</span></div>
+          </div>
+
+          <div id="connectorPairingArea" class="connector-pairing-area">
+            <p class="muted">Genera un código para vincular el Connector de Windows con esta cuenta de CAHESA.</p>
+            <button id="createConnectorPairingBtn" class="primary" type="button">Generar código de vinculación</button>
+            <div id="connectorPairingCodeWrap" class="connector-code-wrap hidden">
+              <span>Código de vinculación</span>
+              <strong id="connectorPairingCode">—</strong>
+              <small>Es temporal para esta instalación. Escríbelo en CAHESA Connector.</small>
+            </div>
+          </div>
+
+          <div id="connectorInfo" class="connector-info muted">Todavía no hay un Connector vinculado.</div>
+        </div>
+
+
         <div class="section-card danger-card">
 
           <h3>
@@ -1393,40 +1410,6 @@
 
 
   <!-- =====================================================
-       MODAL LOCALIDADES DEL MAPA DE RED
-       ===================================================== -->
-
-  <dialog id="networkLocalitiesDialog">
-    <form id="networkLocalitiesForm" class="dialog-card">
-      <div class="dialog-head">
-        <div>
-          <h2>Localidades</h2>
-          <p class="muted">Agrega los lugares que utilizarás para organizar tus cajas de red.</p>
-        </div>
-        <button type="button" data-close-dialog="networkLocalitiesDialog" class="icon-btn" aria-label="Cerrar">×</button>
-      </div>
-
-      <div class="network-locality-manager">
-        <div class="network-locality-add">
-          <input id="newNetworkLocalityName" type="text" placeholder="Ej. Ostuacán">
-          <button id="addNetworkLocalityBtn" class="primary" type="button">Agregar</button>
-        </div>
-        <div class="network-locality-import-actions">
-          <button id="importNetworkLocalitiesBtn" class="ghost" type="button">Importar Excel / CSV</button>
-          <input id="importNetworkLocalitiesFile" type="file" accept=".xlsx,.xls,.csv,text/csv" hidden>
-          <button id="seedNetworkLocalitiesBtn" class="ghost" type="button">Cargar localidades iniciales</button>
-        </div>
-        <p class="muted small-text">El archivo puede tener una columna llamada <strong>Localidad</strong>, <strong>Nombre</strong> o <strong>NOMBRE</strong>. También puede ser un CSV guardado desde Excel.</p>
-        <div id="networkLocalitiesList" class="network-localities-list"></div>
-      </div>
-
-      <div class="dialog-actions">
-        <button type="button" data-close-dialog="networkLocalitiesDialog" class="ghost">Cerrar</button>
-      </div>
-    </form>
-  </dialog>
-
-  <!-- =====================================================
        MODAL NUEVA / EDITAR CAJA DE RED
        ===================================================== -->
 
@@ -1445,7 +1428,6 @@
       <div class="form-grid">
         <label>Nombre*<input id="networkBoxName" type="text" required placeholder="Ej. CTO Centro"></label>
         <label>Código<input id="networkBoxCode" type="text" placeholder="Ej. CTO-001"></label>
-        <label>Localidad<select id="networkBoxLocality"><option value="">Sin localidad</option></select></label>
         <label>Capacidad de puertos*<input id="networkBoxCapacity" type="number" min="1" max="512" step="1" required value="8"></label>
         <label>Estado<select id="networkBoxStatus"><option value="active">Activa</option><option value="maintenance">Mantenimiento</option><option value="inactive">Inactiva</option></select></label>
         <label class="full-row">Dirección / referencia<input id="networkBoxAddress" type="text" placeholder="Referencia para localizarla"></label>
@@ -1944,7 +1926,6 @@
        ===================================================== -->
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 
   <script
     type="module"
