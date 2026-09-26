@@ -68,6 +68,7 @@ let profile = {};
 let clients = [];
 let payments = [];
 let networkBoxes = [];
+let networkLocalities = [];
 
 let unsubClients = null;
 let unsubPayments = null;
@@ -83,7 +84,6 @@ let selectedNetworkBoxId = "";
 let pendingNetworkMapPlacement = null;
 
 let deferredInstall = null;
-let lastReceipt = null;
 
 
 /* =========================================================
@@ -111,26 +111,6 @@ const monthKey = (d = new Date()) =>
   `${d.getFullYear()}-${String(
     d.getMonth() + 1
   ).padStart(2, "0")}`;
-
-function generateClientCode() {
-  const stamp = Date.now().toString(36).toUpperCase().slice(-6);
-  return `CL-${stamp}`;
-}
-
-function generateReceiptFolio() {
-  const date = isoDate().replaceAll("-", "");
-  const random = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `CAH-${date}-${random}`;
-}
-
-const DEFAULT_TICKET_SETTINGS = {
-  businessName: "CAHESA",
-  subtitle: "Control de pagos",
-  footer: "Gracias por su pago.",
-  showLogo: true,
-  showReference: true,
-  logoURL: ""
-};
 
 
 const dateFromIso = (value) => {
@@ -289,56 +269,43 @@ function csvToObjects(text) {
 }
 
 const CLIENT_CSV_HEADERS = [
-  "Código CAHESA", "ID Firebase", "Fecha de ingreso", "Nombre", "Teléfono",
-  "Placa", "PPPoE / Secrets", "NAP", "Puerto", "VLAN", "MAC",
-  "Servicio", "Mensualidad", "Próximo vencimiento", "Estado",
-  "Último pago", "Dirección", "Referencia", "Equipo", "Modelo",
-  "Serie", "IP equipo", "SSID", "Notas"
+  "ID",
+  "Nombre",
+  "Teléfono",
+  "Referencia",
+  "Dirección",
+  "Servicio",
+  "Mensualidad",
+  "Fecha de pago",
+  "Estado",
+  "Notas",
+  "Foto"
 ];
 
 function clientToCsvRow(c) {
-  const box = networkBoxes.find(b => b.id === c.networkBoxId);
   return [
-    c.clientCode || "",
     c.id || "",
-    c.createdAt ? (timestampDate(c.createdAt) ? isoDate(timestampDate(c.createdAt)) : "") : "",
     c.name || "",
     c.phone || "",
-    c.placa || "",
-    c.pppoeUsername || "",
-    box?.code || box?.name || c.nap || "",
-    c.networkPort || "",
-    c.vlan || "",
-    c.equipmentMac || "",
+    c.reference || "",
+    c.address || "",
     c.service || "Internet",
     Number(c.amount) || 0,
-    effectiveDueDate(c) || c.dueDate || "",
+    c.dueDate || "",
     c.currentPaymentStatus || "pending",
-    c.lastPaymentDate || "",
-    c.address || "",
-    c.reference || "",
-    c.equipmentType || "",
-    c.equipmentModel || "",
-    c.equipmentSerial || "",
-    c.equipmentIp || "",
-    c.equipmentSsid || "",
-    c.notes || ""
+    c.notes || "",
+    c.photoName || ""
   ].map(csvEscape).join(",");
 }
 
 function paymentToCsvRow(p) {
-  const client = clients.find(c => c.id === p.clientId);
   return [
-    p.folio || "",
     p.id || "",
-    p.clientCode || client?.clientCode || "",
     p.clientId || "",
-    p.clientName || client?.name || "",
-    p.service || client?.service || "Internet",
+    p.clientName || "",
     Number(p.amount) || 0,
     p.paidDate || "",
-    paymentMonthsForCalendar(p).join(" | "),
-    p.nextDueDate || "",
+    p.month || "",
     p.method || "",
     p.note || ""
   ].map(csvEscape).join(",");
@@ -521,11 +488,17 @@ function exportClientsCsv() {
 
 function downloadClientTemplate() {
   const example = [
-    "CL-EJEMPLO", "", isoDate(), "Juan Pérez", "9931234567",
-    "", "juanperez", "NAP-01", "1", "100", "AA:BB:CC:DD:EE:FF",
-    "Internet", "300", addMonths(isoDate(), 1), "pending", "",
-    "Calle Principal #10", "Centro", "ONU", "Huawei HG8546M",
-    "", "", "", "Cliente de ejemplo"
+    "EJEMPLO-001",
+    "Juan Pérez",
+    "9931234567",
+    "Centro",
+    "Calle Principal #10",
+    "Internet",
+    "300",
+    isoDate(),
+    "pending",
+    "Cliente de ejemplo",
+    "EJEMPLO-001.jpg"
   ].map(csvEscape).join(",");
 
   downloadText(
@@ -536,9 +509,8 @@ function downloadClientTemplate() {
 
 function exportPaymentsCsv() {
   const headers = [
-    "Folio", "ID Firebase", "Código CAHESA", "Cliente ID", "Cliente",
-    "Servicio", "Monto", "Fecha de pago", "Periodos cubiertos",
-    "Próximo vencimiento", "Método", "Nota"
+    "ID", "Cliente ID", "Cliente", "Monto",
+    "Fecha de pago", "Mes", "Método", "Nota"
   ];
 
   const content = [
@@ -557,76 +529,34 @@ async function importClientsCsv(file) {
 
   const text = await file.text();
   const rows = csvToObjects(text);
-  if (!rows.length) throw new Error("El archivo no contiene registros.");
 
-  const pick = (row, ...keys) => {
-    for (const key of keys) {
-      if (row[key] !== undefined && String(row[key]).trim() !== "") return String(row[key]).trim();
-    }
-    return "";
-  };
+  if (!rows.length) {
+    throw new Error("El archivo no contiene registros.");
+  }
 
-  const isBasicProviderFormat = rows.some(r =>
-    pick(r, "secrets", "nap", "vlan", "placa", "dia de pago", "diadepago") ||
-    pick(r, "fecha de ingreso", "fechadeingreso")
-  );
+  const normalizedRows = rows.map(row => ({
+    id: row.id?.trim() || "",
+    name: row.nombre?.trim() || "",
+    phone: row.telefono?.trim() || "",
+    reference: row.referencia?.trim() || "",
+    address: row.direccion?.trim() || "",
+    service: row.servicio?.trim() || "Internet",
+    amount: Number(String(row.mensualidad || "0").replace(/[$,\s]/g, "")) || 0,
+    dueDate: row.fechadepago?.trim() || isoDate(),
+    currentPaymentStatus:
+      ["paid", "pagado"].includes((row.estado || "").trim().toLowerCase())
+        ? "paid"
+        : "pending",
+    notes: row.notas?.trim() || "",
+    photoName: row.foto?.trim() || ""
+  })).filter(row => row.name);
 
-  const normalizedRows = rows.map(row => {
-    const name = pick(row, "nombre");
-    if (!name) return null;
+  if (!normalizedRows.length) {
+    throw new Error("No encontré filas con nombre de cliente.");
+  }
 
-    const amountRaw = pick(row, "mensualidad", "pago", "monto");
-    const amount = Number(String(amountRaw).replace(/[$,\s]/g, "")) || 0;
-    const incomeDate = pick(row, "fecha de ingreso", "fechadeingreso") || isoDate();
-    const dueRaw = pick(row, "proximo vencimiento", "proximovencimiento", "fecha de pago", "fechadepago");
-    const billingDayRaw = pick(row, "dia de pago", "diadepago");
-    let dueDate = dueRaw;
-
-    if (!dueDate && billingDayRaw) {
-      const day = Math.min(31, Math.max(1, Number(billingDayRaw) || 1));
-      const now = new Date();
-      const candidate = new Date(now.getFullYear(), now.getMonth(), day);
-      if (candidate < new Date(now.getFullYear(), now.getMonth(), now.getDate())) {
-        candidate.setMonth(candidate.getMonth() + 1);
-      }
-      dueDate = isoDate(candidate);
-    }
-    if (!dueDate) dueDate = addMonths(incomeDate, 1) || isoDate();
-
-    const statusRaw = normalizeText(pick(row, "estado", "status"));
-    const status = ["paid", "pagado"].includes(statusRaw) ? "paid" : "pending";
-
-    return {
-      id: pick(row, "id firebase", "id", "firebase id"),
-      clientCode: pick(row, "codigo cahesa", "codigo", "codigo cliente"),
-      name,
-      phone: pick(row, "telefono", "teléfono"),
-      reference: pick(row, "referencia", "colonia"),
-      address: pick(row, "direccion", "dirección"),
-      service: pick(row, "servicio") || "Internet",
-      amount,
-      dueDate,
-      currentPaymentStatus: status,
-      notes: pick(row, "notas"),
-      placa: pick(row, "placa"),
-      pppoeUsername: pick(row, "pppoe / secrets", "pppoe", "secrets"),
-      nap: pick(row, "nap"),
-      vlan: pick(row, "vlan"),
-      equipmentMac: pick(row, "mac", "mac / dirección física"),
-      equipmentType: pick(row, "equipo", "tipo de equipo") || "ONU",
-      equipmentModel: pick(row, "modelo", "marca / modelo"),
-      equipmentSerial: pick(row, "serie", "número de serie"),
-      equipmentIp: pick(row, "ip equipo"),
-      equipmentSsid: pick(row, "ssid", "ssid / wifi"),
-      lastPaymentDate: pick(row, "ultimo pago", "último pago"),
-      createdDate: incomeDate,
-      basicProviderFormat: isBasicProviderFormat
-    };
-  }).filter(Boolean);
-
-  if (!normalizedRows.length) throw new Error("No encontré filas con nombre de cliente.");
-
-  let created = 0, updated = 0;
+  let created = 0;
+  let updated = 0;
 
   for (let start = 0; start < normalizedRows.length; start += 450) {
     const chunk = normalizedRows.slice(start, start + 450);
@@ -635,58 +565,69 @@ async function importClientsCsv(file) {
     for (const row of chunk) {
       let existing = null;
 
-      if (row.id) existing = clients.find(c => c.id === row.id) || null;
-      if (!existing && row.clientCode) {
-        existing = clients.find(c => normalizeText(c.clientCode) === normalizeText(row.clientCode)) || null;
+      if (row.id) {
+        existing = clients.find(c => c.id === row.id) || null;
       }
+
       if (!existing) {
         const normalizedName = normalizeText(row.name);
-        existing = clients.find(c => normalizeText(c.name) === normalizedName) || null;
+        existing = clients.find(c =>
+          normalizeText(c.name) === normalizedName
+        ) || null;
       }
 
       const clientRef = existing
         ? doc(db, "users", currentUser.uid, "clients", existing.id)
         : doc(collection(db, "users", currentUser.uid, "clients"));
 
-      const existingBox = row.nap
-        ? networkBoxes.find(b =>
-            normalizeText(b.code) === normalizeText(row.nap) ||
-            normalizeText(b.name) === normalizeText(row.nap)
-          )
-        : null;
-
       const data = {
-        clientCode: row.clientCode || existing?.clientCode || generateClientCode(),
         name: row.name,
-        phone: row.phone || existing?.phone || "",
-        reference: row.reference || existing?.reference || "",
-        address: row.address || existing?.address || "",
-        service: row.service || existing?.service || "Internet",
-        amount: row.amount || existing?.amount || 0,
-        dueDate: row.dueDate || existing?.dueDate || addMonths(isoDate(), 1),
+        phone: row.phone,
+        reference: row.reference,
+        address: row.address,
+        service: row.service,
+        amount: row.amount,
+        dueDate: row.dueDate,
         currentPaymentStatus: row.currentPaymentStatus,
-        notes: row.notes || existing?.notes || "",
-        placa: row.placa || existing?.placa || "",
-        pppoeUsername: row.pppoeUsername || existing?.pppoeUsername || "",
-        nap: row.nap || existing?.nap || "",
-        vlan: row.vlan || existing?.vlan || "",
-        equipmentMac: row.equipmentMac || existing?.equipmentMac || "",
-        equipmentType: row.equipmentType || existing?.equipmentType || "ONU",
-        equipmentModel: row.equipmentModel || existing?.equipmentModel || "",
-        equipmentSerial: row.equipmentSerial || existing?.equipmentSerial || "",
-        equipmentIp: row.equipmentIp || existing?.equipmentIp || "",
-        equipmentSsid: row.equipmentSsid || existing?.equipmentSsid || "",
+        notes: row.notes,
         active: existing?.active !== false,
         updatedAt: serverTimestamp()
       };
 
-      if (existing?.networkBoxId) data.networkBoxId = existing.networkBoxId;
-      else if (existingBox) data.networkBoxId = existingBox.id;
+      if (row.photoName) {
+        const existingPhoto = existing?.photoURL || "";
+        if (existingPhoto) {
+          data.photoURL = existingPhoto;
+          data.photoName = row.photoName;
+        } else {
+          const assetId =
+            normalizeText(row.photoName);
 
-      if (row.lastPaymentDate) data.lastPaymentDate = row.lastPaymentDate;
+          if (assetId) {
+            try {
+              const assetSnap = await getDoc(
+                doc(
+                  db,
+                  "users",
+                  currentUser.uid,
+                  "assets",
+                  assetId
+                )
+              );
+
+              if (assetSnap.exists()) {
+                data.photoURL = assetSnap.data().url || "";
+                data.photoName = row.photoName;
+              }
+            } catch (assetErr) {
+              console.warn("No se pudo resolver la foto importada:", assetErr);
+            }
+          }
+        }
+      }
 
       if (!existing) {
-        data.createdAt = row.createdDate || serverTimestamp();
+        data.createdAt = serverTimestamp();
         created++;
       } else {
         updated++;
@@ -700,6 +641,7 @@ async function importClientsCsv(file) {
 
   toast(`Importación terminada: ${created} nuevos, ${updated} actualizados.`);
 }
+
 
 
 /* =========================================================
@@ -1094,8 +1036,6 @@ function renderProfile() {
   $("#profilePhone").value =
     profile.phone || "";
 
-  renderTicketSettings();
-
 
   const photo =
     profile.photoURL ||
@@ -1251,7 +1191,7 @@ function subscribeData() {
             })
           );
 
-        ensureMissingClientCodes(clients);
+
         renderAll();
 
       },
@@ -1322,8 +1262,12 @@ function subscribeData() {
   unsubNetworkBoxes = onSnapshot(
     aq,
     snapshot => {
-      networkBoxes = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+      const assets = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      networkBoxes = assets
         .filter(item => item.type === "networkBox")
+        .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "es"));
+      networkLocalities = assets
+        .filter(item => item.type === "networkLocality")
         .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "es"));
       renderAll();
     },
@@ -1333,28 +1277,6 @@ function subscribeData() {
   }
 
   
-async function ensureMissingClientCodes(list) {
-  if (!currentUser) return;
-  const missing = list.filter(c => !c.clientCode);
-  if (!missing.length) return;
-
-  try {
-    const batch = writeBatch(db);
-    missing.slice(0, 450).forEach(c => {
-      const code = `CL-${String(c.id).slice(-6).toUpperCase()}`;
-      batch.set(
-        doc(db, "users", currentUser.uid, "clients", c.id),
-        { clientCode: code, updatedAt: serverTimestamp() },
-        { merge: true }
-      );
-    });
-    await batch.commit();
-  } catch (err) {
-    console.warn("No se pudieron asignar códigos CAHESA automáticamente:", err);
-  }
-}
-
-
 /* =========================================================
    ESTADO DEL CLIENTE
 ========================================================= */
@@ -1646,10 +1568,6 @@ function renderClients() {
               ${escapeHtml(c.name)}
             </h3>
 
-            <p class="client-code-line">
-              Código: <strong>${escapeHtml(c.clientCode || "Sin código")}</strong>
-            </p>
-
             <p>
               ${escapeHtml(
                 c.service || "Internet"
@@ -1682,14 +1600,7 @@ function renderClients() {
             <div class="card-actions">
 
               <button
-                class="ghost small"
-                data-history-client="${escapeHtml(c.id)}"
-              >
-                Historial
-              </button>
-
-              <button
-                class="ghost small"
+                class="ghost"
                 data-edit="${escapeHtml(c.id)}"
               >
                 Editar
@@ -1851,91 +1762,6 @@ function renderHistory() {
 
 
 /* =========================================================
-   HISTORIAL INDIVIDUAL DEL CLIENTE
-========================================================= */
-
-let activeHistoryClientId = "";
-
-function renderClientHistory() {
-  const c = clients.find(x => x.id === activeHistoryClientId);
-  if (!c) return;
-
-  const q = ($("#clientHistorySearch")?.value || "").toLowerCase().trim();
-  const month = $("#clientHistoryMonth")?.value || "";
-
-  const list = payments
-    .filter(p => p.clientId === c.id)
-    .filter(p => {
-      const text = `${p.folio || ""} ${p.method || ""} ${p.note || ""} ${p.clientName || ""}`.toLowerCase();
-      return (!q || text.includes(q)) && (!month || p.month === month);
-    })
-    .sort((a,b) => String(b.paidDate || "").localeCompare(String(a.paidDate || "")));
-
-  $("#clientHistoryTitle").textContent = c.name;
-  $("#clientHistoryMeta").textContent = `${c.clientCode || "Sin código"} · ${c.service || "Internet"} · ${money(c.amount)}/mes`;
-
-  const total = list.reduce((sum,p) => sum + Number(p.amount || 0), 0);
-  const all = payments.filter(p => p.clientId === c.id);
-  $("#clientHistorySummary").innerHTML = `
-    <div><span>Pagos registrados</span><strong>${all.length}</strong></div>
-    <div><span>Total mostrado</span><strong>${money(total)}</strong></div>
-    <div><span>Próximo vencimiento</span><strong>${escapeHtml(effectiveDueDate(c) || "—")}</strong></div>
-    <div><span>Estado</span><strong>${escapeHtml(statusLabel(clientStatus(c)))}</strong></div>`;
-
-  const host = $("#clientHistoryPayments");
-  host.className = list.length ? "client-history-payments" : "client-history-payments empty-state";
-  host.innerHTML = list.length ? list.map(p => `
-    <div class="client-history-payment-row">
-      <div>
-        <strong>${escapeHtml(p.folio || "Recibo")}</strong>
-        <span>${escapeHtml(p.paidDate || "")} · ${escapeHtml(p.method || "Efectivo")}</span>
-        <small>Periodo: ${escapeHtml(paymentMonthsForCalendar(p).map(monthLabel).join(", "))}${p.note ? ` · ${escapeHtml(p.note)}` : ""}</small>
-      </div>
-      <div class="client-history-payment-actions">
-        <strong class="amount-positive">${money(p.amount)}</strong>
-        <button class="ghost small" data-view-receipt="${escapeHtml(p.id)}">Ver recibo</button>
-      </div>
-    </div>
-  `).join("") : "No hay pagos que coincidan con los filtros.";
-}
-
-function openClientHistory(id) {
-  const c = clients.find(x => x.id === id);
-  if (!c) return;
-  activeHistoryClientId = id;
-  $("#clientHistorySearch").value = "";
-  $("#clientHistoryMonth").value = "";
-  renderClientHistory();
-  $("#clientHistoryDialog").showModal();
-}
-
-$("#clientHistorySearch")?.addEventListener("input", renderClientHistory);
-$("#clientHistoryMonth")?.addEventListener("change", renderClientHistory);
-
-function openSavedReceipt(paymentId) {
-  const p = payments.find(x => x.id === paymentId);
-  if (!p) return;
-  const c = clients.find(x => x.id === p.clientId);
-  const receipt = {
-    id: p.id,
-    folio: p.folio || `CAH-${String(p.id).slice(0, 8).toUpperCase()}`,
-    clientId: p.clientId,
-    clientCode: p.clientCode || c?.clientCode || "",
-    clientName: p.clientName || c?.name || "Cliente",
-    service: p.service || c?.service || "Internet",
-    amount: Number(p.amount || 0),
-    paidDate: p.paidDate || "",
-    coveredMonths: paymentMonthsForCalendar(p),
-    method: p.method || "Efectivo",
-    note: p.note || "",
-    nextDueDate: p.nextDueDate || c?.dueDate || effectiveDueDate(c)
-  };
-  lastReceipt = receipt;
-  renderTicket(receipt);
-  $("#ticketDialog").showModal();
-}
-
-/* =========================================================
    FILTROS
 ========================================================= */
 
@@ -1945,16 +1771,18 @@ function openSavedReceipt(paymentId) {
   "paymentSearch",
   "paymentFilter",
   "historySearch",
-  "historyMonth",
-  "paymentCalendarSearch",
-  "paymentCalendarFilter",
-  "paymentCalendarYear"
+  "historyMonth"
 ].forEach(id => {
+
   const el = $("#" + id);
+
   if (el) {
-    el.addEventListener("input", renderAll);
-    el.addEventListener("change", renderAll);
+    el.addEventListener(
+      "input",
+      renderAll
+    );
   }
+
 });
 
 
@@ -1977,8 +1805,6 @@ function openClientDialog(c = null) {
   $("#clientId").value =
     c?.id || "";
 
-  $("#clientCode").value =
-    c?.clientCode || (c ? "" : generateClientCode());
 
   $("#clientName").value =
     c?.name || "";
@@ -2006,10 +1832,6 @@ function openClientDialog(c = null) {
   $("#clientEquipmentMac").value = c?.equipmentMac || "";
   $("#clientEquipmentIp").value = c?.equipmentIp || "";
   $("#clientEquipmentSsid").value = c?.equipmentSsid || "";
-
-  $("#clientPppoeUsername").value = c?.pppoeUsername || "";
-  $("#clientVlan").value = c?.vlan || "";
-  $("#clientPlaca").value = c?.placa || "";
 
 
   $("#clientService").value =
@@ -2250,9 +2072,6 @@ $("#clientForm").addEventListener(
 
       const data = {
 
-        clientCode:
-          $("#clientCode").value.trim() || generateClientCode(),
-
         name,
 
         phone:
@@ -2280,10 +2099,6 @@ $("#clientForm").addEventListener(
         equipmentMac: $("#clientEquipmentMac").value.trim(),
         equipmentIp: $("#clientEquipmentIp").value.trim(),
         equipmentSsid: $("#clientEquipmentSsid").value.trim(),
-
-        pppoeUsername: $("#clientPppoeUsername")?.value?.trim?.() || oldClient?.pppoeUsername || "",
-        vlan: $("#clientVlan")?.value?.trim?.() || oldClient?.vlan || "",
-        placa: $("#clientPlaca")?.value?.trim?.() || oldClient?.placa || "",
 
         service:
           $("#clientService")
@@ -2556,306 +2371,68 @@ function renderPaymentOverdueOptions(client) {
 }
 
 
-function getTrackingYear() {
-  return Number($("#paymentCalendarYear")?.value) || new Date().getFullYear();
-}
-
-function populatePaymentCalendarYears() {
-  const select = $("#paymentCalendarYear");
-  if (!select) return;
-  const current = new Date().getFullYear();
-  const selected = Number(select.value) || current;
-  select.innerHTML = Array.from({ length: 8 }, (_, i) => current - 2 + i)
-    .map(year => `<option value="${year}">${year}</option>`).join("");
-  select.value = String(selected >= current - 2 && selected <= current + 5 ? selected : current);
-}
-
-function trackingMatches(client, year) {
-  const q = ($("#paymentCalendarSearch")?.value || "").toLowerCase().trim();
-  const f = $("#paymentCalendarFilter")?.value || "all";
-  const text = `${client.name || ""} ${client.clientCode || ""} ${client.phone || ""}`.toLowerCase();
-  if (q && !text.includes(q)) return false;
-
-  if (f === "all") return true;
-  const overdue = getClientOverdueMonths(client);
-  if (f === "overdue") return overdue.length > 0;
-  if (f === "paid") return clientStatus(client) === "paid";
-  if (f === "pending") return clientStatus(client) === "pending";
-  return true;
-}
-
-function calendarCellState(client, month, year) {
-  const paid = getClientPaymentMonths(client.id);
-  const created = timestampDate(client.createdAt);
-  const createdMonth = created ? monthKey(created) : "";
-  const dueDate = dateFromIso(effectiveDueDate(client) || client.dueDate);
-  const dueDay = dueDate?.getDate() || 1;
-  const key = `${year}-${String(month).padStart(2, "0")}`;
-  const today = new Date();
-  const todayKey = monthKey(today);
-  const deadline = monthDayDueDate(key, dueDay);
-
-  if (createdMonth && key < createdMonth) return { state: "before", label: "—" };
-  if (paid.has(key)) return { state: "paid", label: "✓" };
-  if (key > todayKey) return { state: "future", label: "—" };
-  if (deadline < isoDate()) return { state: "overdue", label: "!" };
-  return { state: "pending", label: "•" };
-}
-
 function renderPaymentCalendar() {
   const host = $("#paymentCalendar");
   if (!host) return;
 
-  populatePaymentCalendarYears();
+  const active = clients.filter(c => c.active !== false);
+  const now = new Date();
+  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  // Ventana móvil de 12 meses: 5 meses anteriores + mes actual + 6 siguientes.
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(currentMonthStart.getFullYear(), currentMonthStart.getMonth() - 5 + i, 1);
+    return monthKey(d);
+  });
 
-  const year = getTrackingYear();
-  const active = clients.filter(c => c.active !== false && trackingMatches(c, year));
-  const months = Array.from({ length: 12 }, (_, i) => i + 1);
-
-  if (!clients.length) {
-    host.innerHTML = `<div class="empty-state">Agrega clientes para ver su seguimiento mensual.</div>`;
-    return;
-  }
   if (!active.length) {
-    host.innerHTML = `<div class="empty-state">No hay clientes que coincidan con los filtros.</div>`;
+    host.innerHTML = `<div class="empty-state">Agrega clientes para ver su calendario mensual.</div>`;
     return;
   }
-
-  const rows = active.map(c => {
-    const cells = months.map(m => {
-      const cell = calendarCellState(c, m, year);
-      return `<td><span class="payment-month-cell ${cell.state}" title="${escapeHtml(monthLabel(`${year}-${String(m).padStart(2, "0")}`))}">${cell.label}</span></td>`;
-    }).join("");
-    return `<tr>
-      <th class="payment-calendar-client">
-        <span class="calendar-client-name">${escapeHtml(c.name)}</span>
-        <small>${escapeHtml(c.clientCode || "")}</small>
-      </th>${cells}</tr>`;
-  }).join("");
-
-  const mobile = months.map(m => {
-    const key = `${year}-${String(m).padStart(2, "0")}`;
-    const items = active.map(c => {
-      const cell = calendarCellState(c, m, year);
-      return `<div class="mobile-calendar-row">
-        <div><strong>${escapeHtml(c.name)}</strong><small>${escapeHtml(c.clientCode || "")}</small></div>
-        <span class="payment-month-cell ${cell.state}">${cell.label}</span>
-      </div>`;
-    }).join("");
-    return `<article class="mobile-calendar-month"><h3>${escapeHtml(monthLabel(key))}</h3>${items}</article>`;
-  }).join("");
 
   host.innerHTML = `
-    <div class="payment-calendar-desktop">
+    <div class="payment-calendar-scroll">
       <table class="payment-calendar">
-        <thead><tr>
-          <th>Cliente</th>
-          ${months.map(m => `<th>${escapeHtml(monthLabel(`${year}-${String(m).padStart(2, "0")}`, true).replace(/\s+\d{4}/, ""))}</th>`).join("")}
-        </tr></thead>
-        <tbody>${rows}</tbody>
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            ${months.map(m => `<th>${escapeHtml(monthLabel(m, true).replace(/\s+de\s+\d{4}/i, ""))}</th>`).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${active.map(c => {
+            const paid = getClientPaymentMonths(c.id);
+            const created = timestampDate(c.createdAt);
+            const createdMonth = created ? monthKey(created) : "";
+            const due = effectiveDueDate(c);
+            const dueDate = dateFromIso(due);
+            const dueDay = dueDate?.getDate() || 1;
+            return `<tr>
+              <th class="payment-calendar-client">${escapeHtml(c.name)}</th>
+              ${months.map(m => {
+                const deadline = monthDayDueDate(m, dueDay);
+                const isFuture = m > monthKey(now);
+                const beforeClient = createdMonth && m < createdMonth;
+                let state = "future";
+                let label = "—";
+                if (!beforeClient && paid.has(m)) { state = "paid"; label = "✓"; }
+                else if (!beforeClient && !isFuture && deadline < isoDate()) { state = "overdue"; label = "!"; }
+                else if (!beforeClient && m === monthKey(now)) { state = "pending"; label = "•"; }
+                const currentClass = m === monthKey(now) ? " current-month" : "";
+                return `<td><span class="payment-month-cell ${state}${currentClass}" title="${escapeHtml(monthLabel(m))}">${label}</span></td>`;
+              }).join("")}
+            </tr>`;
+          }).join("")}
+        </tbody>
       </table>
     </div>
-    <div class="payment-calendar-mobile">${mobile}</div>
     <div class="payment-calendar-legend">
       <span><i class="paid"></i> Pagado</span>
       <span><i class="pending"></i> Pendiente</span>
       <span><i class="overdue"></i> Atrasado</span>
       <span><i class="future"></i> Futuro</span>
-    </div>`;
+    </div>
+  `;
 }
-
-/* =========================================================
-   RECIBOS DE PAGO
-========================================================= */
-
-function getTicketSettings() {
-  return {
-    ...DEFAULT_TICKET_SETTINGS,
-    ...(profile.ticketSettings || {})
-  };
-}
-
-function ticketPeriodLabel(receipt) {
-  const months = Array.isArray(receipt.coveredMonths) && receipt.coveredMonths.length
-    ? receipt.coveredMonths
-    : [receipt.paidDate?.slice(0, 7)];
-  return months.filter(Boolean).map(m => monthLabel(m)).join(", ");
-}
-
-function renderTicket(receipt) {
-  const host = $("#ticketPreview");
-  if (!host || !receipt) return;
-
-  const settings = getTicketSettings();
-  const logo = settings.showLogo && settings.logoURL
-    ? `<img class="ticket-logo" src="${escapeHtml(settings.logoURL)}" alt="">`
-    : "";
-
-  const reference = settings.showReference
-    ? `<div><span>Cliente</span><strong>${escapeHtml(receipt.clientCode || "—")}</strong></div>
-       <div><span>Referencia</span><strong>${escapeHtml(receipt.clientId || "—")}</strong></div>`
-    : "";
-
-  host.innerHTML = `
-    <article class="print-ticket" id="printTicket">
-      <header class="ticket-header">
-        ${logo}
-        <div>
-          <h3>${escapeHtml(settings.businessName || "CAHESA")}</h3>
-          <p>${escapeHtml(settings.subtitle || "")}</p>
-        </div>
-      </header>
-      <div class="ticket-title">RECIBO DE PAGO</div>
-      <div class="ticket-folio">${escapeHtml(receipt.folio)}</div>
-      <div class="ticket-info">
-        <div><span>Cliente</span><strong>${escapeHtml(receipt.clientName)}</strong></div>
-        <div><span>Servicio</span><strong>${escapeHtml(receipt.service)}</strong></div>
-        ${reference}
-        <div><span>Periodo</span><strong>${escapeHtml(ticketPeriodLabel(receipt))}</strong></div>
-        <div><span>Fecha de pago</span><strong>${escapeHtml(receipt.paidDate)}</strong></div>
-        <div><span>Método</span><strong>${escapeHtml(receipt.method)}</strong></div>
-        <div class="ticket-total"><span>Total pagado</span><strong>${money(receipt.amount)}</strong></div>
-        <div><span>Próximo vencimiento</span><strong>${escapeHtml(receipt.nextDueDate || "—")}</strong></div>
-      </div>
-      ${receipt.note ? `<p class="ticket-note">${escapeHtml(receipt.note)}</p>` : ""}
-      <footer>${escapeHtml(settings.footer || "Gracias por su pago.")}</footer>
-    </article>`;
-}
-
-function ticketText(receipt) {
-  return [
-    `Recibo de pago ${receipt.folio}`,
-    `Cliente: ${receipt.clientName}`,
-    `Servicio: ${receipt.service}`,
-    `Periodo: ${ticketPeriodLabel(receipt)}`,
-    `Fecha: ${receipt.paidDate}`,
-    `Monto: ${money(receipt.amount)}`,
-    `Método: ${receipt.method}`,
-    `Próximo vencimiento: ${receipt.nextDueDate || "—"}`
-  ].join("\n");
-}
-
-function getTicketPrintableHtml(receipt) {
-  const settings = getTicketSettings();
-  const logo = settings.showLogo && settings.logoURL ? `<img src="${escapeHtml(settings.logoURL)}" style="max-width:120px;max-height:70px;object-fit:contain">` : "";
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${escapeHtml(receipt.folio)}</title>
-  <style>
-  @page{size:letter;margin:10mm}body{font-family:Arial,sans-serif;margin:0;background:#fff;color:#111}
-  .sheet{width:105mm;height:135mm;box-sizing:border-box}
-  .ticket{width:105mm;height:135mm;border:1px dashed #999;padding:8mm;box-sizing:border-box;display:flex;flex-direction:column}
-  .head{display:flex;align-items:center;gap:10px;border-bottom:2px solid #111;padding-bottom:8px}.head h3{margin:0;font-size:18px}.head p{margin:2px 0;font-size:11px}
-  .title{text-align:center;font-weight:800;font-size:16px;margin:12px 0 2px}.folio{text-align:center;font-size:10px;color:#555;margin-bottom:12px}
-  .row{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #ddd;padding:6px 0;font-size:11px}.row strong{text-align:right}
-  .total{font-size:15px;font-weight:800;margin-top:6px}.foot{margin-top:auto;text-align:center;font-size:10px;padding-top:12px}
-  </style></head><body><div class="sheet"><article class="ticket">
-  <div class="head">${logo}<div><h3>${escapeHtml(settings.businessName || "CAHESA")}</h3><p>${escapeHtml(settings.subtitle || "")}</p></div></div>
-  <div class="title">RECIBO DE PAGO</div><div class="folio">${escapeHtml(receipt.folio)}</div>
-  <div class="row"><span>Cliente</span><strong>${escapeHtml(receipt.clientName)}</strong></div>
-  <div class="row"><span>Servicio</span><strong>${escapeHtml(receipt.service)}</strong></div>
-  <div class="row"><span>Periodo</span><strong>${escapeHtml(ticketPeriodLabel(receipt))}</strong></div>
-  <div class="row"><span>Fecha</span><strong>${escapeHtml(receipt.paidDate)}</strong></div>
-  <div class="row"><span>Método</span><strong>${escapeHtml(receipt.method)}</strong></div>
-  <div class="row total"><span>Total</span><strong>${money(receipt.amount)}</strong></div>
-  <div class="row"><span>Próximo vencimiento</span><strong>${escapeHtml(receipt.nextDueDate || "—")}</strong></div>
-  <div class="foot">${escapeHtml(settings.footer || "Gracias por su pago.")}</div></article></div></body></html>`;
-}
-
-$("#printTicketBtn")?.addEventListener("click", () => {
-  if (!lastReceipt) return;
-  const win = window.open("", "_blank", "noopener,noreferrer");
-  if (!win) { toast("El navegador bloqueó la ventana de impresión.", "error"); return; }
-  win.document.write(getTicketPrintableHtml(lastReceipt));
-  win.document.close();
-  win.focus();
-  setTimeout(() => win.print(), 300);
-});
-
-$("#shareTicketBtn")?.addEventListener("click", async () => {
-  if (!lastReceipt) return;
-  const text = ticketText(lastReceipt);
-  try {
-    const html = getTicketPrintableHtml(lastReceipt);
-    const file = new File([html], `${lastReceipt.folio}.html`, { type: "text/html" });
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ title: `Recibo ${lastReceipt.folio}`, text, files: [file] });
-    } else if (navigator.share) {
-      await navigator.share({ title: `Recibo ${lastReceipt.folio}`, text });
-    } else {
-      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
-    }
-  } catch (err) {
-    if (err?.name !== "AbortError") window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
-  }
-});
-
-$("#downloadTicketBtn")?.addEventListener("click", () => {
-  if (!lastReceipt) return;
-  downloadText(`${lastReceipt.folio}.html`, getTicketPrintableHtml(lastReceipt), "text/html;charset=utf-8");
-  toast("Recibo descargado. También puedes abrirlo e imprimirlo como PDF.");
-});
-
-
-/* =========================================================
-   CONFIGURACIÓN DE RECIBOS
-========================================================= */
-
-function renderTicketSettings() {
-  const settings = getTicketSettings();
-  if ($("#ticketBusinessName")) $("#ticketBusinessName").value = settings.businessName;
-  if ($("#ticketSubtitle")) $("#ticketSubtitle").value = settings.subtitle;
-  if ($("#ticketFooter")) $("#ticketFooter").value = settings.footer;
-  if ($("#ticketShowLogo")) $("#ticketShowLogo").checked = settings.showLogo !== false;
-  if ($("#ticketShowReference")) $("#ticketShowReference").checked = settings.showReference !== false;
-}
-
-$("#saveTicketSettingsBtn")?.addEventListener("click", async () => {
-  if (!currentUser) return;
-  showLoading(true);
-  try {
-    let logoURL = getTicketSettings().logoURL || "";
-    const file = $("#ticketLogoFile")?.files?.[0];
-    if (file) {
-      if (!file.type.startsWith("image/")) throw new Error("El logo debe ser una imagen.");
-      if (file.size > 5 * 1024 * 1024) throw new Error("El logo debe pesar menos de 5 MB.");
-      const logoRef = ref(storage, `users/${currentUser.uid}/profile/ticket-logo`);
-      await uploadBytes(logoRef, file, { contentType: file.type });
-      logoURL = await getDownloadURL(logoRef);
-    }
-
-    const ticketSettings = {
-      businessName: $("#ticketBusinessName").value.trim() || "CAHESA",
-      subtitle: $("#ticketSubtitle").value.trim() || "Control de pagos",
-      footer: $("#ticketFooter").value.trim() || "Gracias por su pago.",
-      showLogo: $("#ticketShowLogo").checked,
-      showReference: $("#ticketShowReference").checked,
-      logoURL
-    };
-
-    await updateDoc(doc(db, "users", currentUser.uid), { ticketSettings, updatedAt: serverTimestamp() });
-    profile = { ...profile, ticketSettings };
-    renderTicketSettings();
-    toast("Configuración de recibos guardada.");
-  } catch (err) {
-    console.error("ERROR CONFIGURANDO RECIBOS:", err);
-    toast(friendlyError(err), "error");
-  } finally {
-    showLoading(false);
-  }
-});
-
-$("#clearTicketLogoBtn")?.addEventListener("click", async () => {
-  if (!currentUser) return;
-  try {
-    const ticketSettings = { ...getTicketSettings(), logoURL: "" };
-    await updateDoc(doc(db, "users", currentUser.uid), { ticketSettings, updatedAt: serverTimestamp() });
-    profile = { ...profile, ticketSettings };
-    renderTicketSettings();
-    if ($("#ticketLogoFile")) $("#ticketLogoFile").value = "";
-    toast("Logo del recibo quitado.");
-  } catch (err) {
-    toast(friendlyError(err), "error");
-  }
-});
 
 
 /* =========================================================
@@ -3002,9 +2579,7 @@ $("#paymentForm").addEventListener(
       const nextDueDate = addMonths(latestCoveredDate, 1);
 
 
-      const folio = generateReceiptFolio();
-
-      const paymentRef = await addDoc(
+      await addDoc(
         collection(
           db,
           "users",
@@ -3012,20 +2587,34 @@ $("#paymentForm").addEventListener(
           "payments"
         ),
         {
+
           clientId: id,
-          clientCode: c.clientCode || "",
+
           clientName: c.name,
-          service: c.service || "Internet",
+
           amount,
+
           paidDate,
+
           month: paidDate.slice(0, 7),
+
           coveredMonths,
-          method: $("#paymentMethod").value,
-          note: $("#paymentNote").value.trim(),
-          folio,
-          nextDueDate,
-          paidAt: serverTimestamp(),
-          createdAt: serverTimestamp()
+
+          method:
+            $("#paymentMethod")
+              .value,
+
+          note:
+            $("#paymentNote")
+              .value
+              .trim(),
+
+          paidAt:
+            serverTimestamp(),
+
+          createdAt:
+            serverTimestamp()
+
         }
       );
 
@@ -3061,24 +2650,6 @@ $("#paymentForm").addEventListener(
 
       $("#paymentDialog").close();
 
-      const receipt = {
-        id: paymentRef.id,
-        folio,
-        clientId: id,
-        clientCode: c.clientCode || "",
-        clientName: c.name,
-        service: c.service || "Internet",
-        amount,
-        paidDate,
-        coveredMonths,
-        method: $("#paymentMethod").value,
-        note: $("#paymentNote").value.trim(),
-        nextDueDate
-      };
-
-      lastReceipt = receipt;
-      renderTicket(receipt);
-      $("#ticketDialog").showModal();
 
       toast(
         `Pago de ${money(amount)} registrado.`
@@ -3254,20 +2825,6 @@ document.addEventListener(
     }
 
 
-    /* Historial individual */
-    const historyClient = e.target.closest("[data-history-client]");
-    if (historyClient) {
-      openClientHistory(historyClient.dataset.historyClient);
-      return;
-    }
-
-    /* Recibo guardado */
-    const savedReceipt = e.target.closest("[data-view-receipt]");
-    if (savedReceipt) {
-      openSavedReceipt(savedReceipt.dataset.viewReceipt);
-      return;
-    }
-
     /* Eliminar cliente */
 
     const deleteClientBtn = e.target.closest("[data-delete-client]");
@@ -3378,8 +2935,6 @@ function goSection(name) {
     network: "Mapa de red",
 
     payments: "Pagos",
-
-    tracking: "Seguimiento de pagos",
 
     history: "Historial",
 
@@ -3807,6 +3362,51 @@ function initNetworkMap() {
   renderNetworkMarkers();
 }
 
+function populateNetworkLocalityControls() {
+  const select = $("#networkLocalityFilter");
+  const boxSelect = $("#networkBoxLocality");
+  const currentFilter = select?.value || "";
+  const currentBoxLocality = boxSelect?.value || "";
+  const options = networkLocalities.map(l => `<option value="${escapeHtml(l.name)}">${escapeHtml(l.name)}</option>`).join("");
+  if (select) {
+    select.innerHTML = `<option value="">Todas las localidades</option>${options}`;
+    if (networkLocalities.some(l => l.name === currentFilter)) select.value = currentFilter;
+  }
+  if (boxSelect) {
+    boxSelect.innerHTML = `<option value="">Sin localidad</option>${options}`;
+    if (networkLocalities.some(l => l.name === currentBoxLocality)) boxSelect.value = currentBoxLocality;
+  }
+}
+
+function filteredNetworkBoxes() {
+  const locality = $("#networkLocalityFilter")?.value || "";
+  const search = String($("#networkBoxSearch")?.value || "").trim().toLocaleLowerCase("es-MX");
+  return networkBoxes.filter(box => {
+    if (locality && String(box.locality || "") !== locality) return false;
+    if (!search) return true;
+    return [box.name, box.code, box.address, box.locality, box.notes].some(v => String(v || "").toLocaleLowerCase("es-MX").includes(search));
+  });
+}
+
+function focusNetworkBox(box) {
+  if (!box || !networkMap) return;
+  const lat = Number(box.latitude), lng = Number(box.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    toast("Esta caja no tiene coordenadas válidas.", "error");
+    return;
+  }
+  selectedNetworkBoxId = box.id;
+  networkMap.setView([lat, lng], Math.max(networkMap.getZoom(), 17), { animate: true });
+  renderNetworkDetail();
+  const count = networkBoxClients(box.id).length;
+  const capacity = Math.max(1, Number(box.capacity || 1));
+  const free = Math.max(0, capacity - count);
+  L.popup({ maxWidth: 240 })
+    .setLatLng([lat, lng])
+    .setContent(`<div class="network-mini-popup"><strong>${escapeHtml(box.name || "Caja")}</strong><span>${escapeHtml(box.code || "Sin código")}</span>${box.locality ? `<span>📍 ${escapeHtml(box.locality)}</span>` : ""}<span>👥 ${count} clientes · ${free} libres</span><span>● ${networkStatusLabel(box.status)}</span></div>`)
+    .openOn(networkMap);
+}
+
 function renderNetwork() {
   const list = $("#networkBoxesList");
   const detail = $("#networkBoxDetail");
@@ -3814,22 +3414,27 @@ function renderNetwork() {
   if (!list || !detail || !stats) return;
 
   populateClientNetworkSelect();
+  populateNetworkLocalityControls();
   const locatedClients = clients.filter(c => Number.isFinite(Number(c.latitude)) && Number.isFinite(Number(c.longitude)));
-  stats.textContent = `${networkBoxes.length} ${networkBoxes.length === 1 ? "caja" : "cajas"} · ${locatedClients.length} ${locatedClients.length === 1 ? "cliente ubicado" : "clientes ubicados"}`;
+  stats.textContent = `${networkBoxes.length} ${networkBoxes.length === 1 ? "caja" : "cajas"} · ${locatedClients.length} ${locatedClients.length === 1 ? "cliente ubicado" : "clientes ubicados"} · ${networkLocalities.length} ${networkLocalities.length === 1 ? "localidad" : "localidades"}`;
 
+  const visibleBoxes = filteredNetworkBoxes();
   if (!networkBoxes.length) {
     list.className = "network-box-list empty-state";
-    list.textContent = "No hay cajas registradas.";
-    detail.innerHTML = `<div class="empty-state">Crea una caja para comenzar a construir tu mapa de red.</div>`;
+    list.textContent = "No hay cajas registradas. Puedes importar un KML o crear una caja.";
+    detail.innerHTML = `<div class="empty-state">Crea o importa cajas para comenzar a construir tu mapa de red.</div>`;
+  } else if (!visibleBoxes.length) {
+    list.className = "network-box-list empty-state";
+    list.textContent = "No hay cajas que coincidan con el filtro.";
   } else {
     list.className = "network-box-list";
-    list.innerHTML = networkBoxes.map(box => {
+    list.innerHTML = visibleBoxes.map(box => {
       const count = networkBoxClients(box.id).length;
       const active = box.id === selectedNetworkBoxId ? " active" : "";
       const status = box.status || "active";
       return `<button type="button" class="network-box-item${active}" data-network-box="${escapeHtml(box.id)}">
         <span class="network-box-dot ${status}"></span>
-        <span class="grow"><strong>${escapeHtml(box.name || "Caja sin nombre")}</strong><span>${escapeHtml(box.code || "Sin código")} · ${count}/${Number(box.capacity || 0)} puertos ocupados</span></span>
+        <span class="grow"><strong>${escapeHtml(box.name || "Caja sin nombre")}</strong><span>${escapeHtml(box.code || "Sin código")} · ${escapeHtml(box.locality || "Sin localidad")} · ${count}/${Number(box.capacity || 0)} puertos ocupados</span></span>
       </button>`;
     }).join("");
   }
@@ -3855,7 +3460,7 @@ function renderNetworkDetail() {
 
   detail.innerHTML = `
     <div class="section-head">
-      <div><h3>${escapeHtml(box.name || "Caja de red")}</h3><p class="muted">${escapeHtml(box.code || "Sin código")} · ${networkStatusLabel(box.status)}</p></div>
+      <div><h3>${escapeHtml(box.name || "Caja de red")}</h3><p class="muted">${escapeHtml(box.code || "Sin código")} · ${escapeHtml(box.locality || "Sin localidad")} · ${networkStatusLabel(box.status)}</p></div>
       <button type="button" class="ghost small" data-edit-network-box="${escapeHtml(box.id)}">Editar</button>
     </div>
     <div class="network-detail-meta">
@@ -3888,7 +3493,9 @@ function renderNetworkMarkers() {
     const marker = L.marker([lat, lng], {
       icon: L.divIcon({ className: "", html: `<div class="network-marker-pin"><span>⌂</span><small>${escapeHtml(box.code || box.name || "Caja")}</small></div>`, iconSize: [100, 42], iconAnchor: [50, 36] })
     });
-    marker.bindPopup(`<strong>${escapeHtml(box.name || "Caja")}</strong><br>${escapeHtml(box.code || "Sin código")}<br>${count}/${Number(box.capacity || 0)} puertos ocupados<br>${networkStatusLabel(box.status)}`);
+    const capacity = Math.max(1, Number(box.capacity || 1));
+    const free = Math.max(0, capacity - count);
+    marker.bindPopup(`<div class="network-mini-popup"><strong>${escapeHtml(box.name || "Caja")}</strong><span>${escapeHtml(box.code || "Sin código")}</span>${box.locality ? `<span>📍 ${escapeHtml(box.locality)}</span>` : ""}<span>👥 ${count} clientes · ${free} puertos libres</span><span>● ${networkStatusLabel(box.status)}</span></div>`);
     marker.on("click", () => { selectedNetworkBoxId = box.id; renderNetwork(); });
     marker.addTo(networkMarkersLayer);
   });
@@ -3934,6 +3541,8 @@ function openNetworkBoxDialog(box = null, coordinateOverride = null) {
   $("#networkBoxId").value = box?.id || "";
   $("#networkBoxName").value = box?.name || "";
   $("#networkBoxCode").value = box?.code || "";
+  populateNetworkLocalityControls();
+  $("#networkBoxLocality").value = box?.locality || "";
   $("#networkBoxCapacity").value = box?.capacity ?? 8;
   $("#networkBoxStatus").value = box?.status || "active";
   $("#networkBoxAddress").value = box?.address || "";
@@ -3965,6 +3574,7 @@ async function saveNetworkBox(e) {
     const id = $("#networkBoxId").value;
     const name = $("#networkBoxName").value.trim();
     const code = $("#networkBoxCode").value.trim();
+    const locality = $("#networkBoxLocality").value.trim();
     const capacity = Number($("#networkBoxCapacity").value);
     const latitude = Number($("#networkBoxLatitude").value);
     const longitude = Number($("#networkBoxLongitude").value);
@@ -3976,7 +3586,7 @@ async function saveNetworkBox(e) {
     if (connected.some(c => Number(c.networkPort) > capacity)) throw new Error("No puedes reducir la capacidad porque hay clientes conectados en puertos superiores.");
     const refDoc = id ? doc(db, "users", currentUser.uid, "assets", id) : doc(collection(db, "users", currentUser.uid, "assets"));
     await setDoc(refDoc, {
-      type: "networkBox", name, code, capacity,
+      type: "networkBox", name, code, locality, capacity,
       status: $("#networkBoxStatus").value,
       address: $("#networkBoxAddress").value.trim(),
       latitude, longitude,
@@ -4033,6 +3643,193 @@ async function deleteSelectedNetworkBox() {
     console.error("ERROR ELIMINANDO CAJA:", err);
     toast(friendlyError(err), "error");
   }
+}
+
+function xmlLocalName(node) {
+  return String(node?.localName || node?.nodeName || "").split(":").pop().toLowerCase();
+}
+
+function kmlText(parent, tag) {
+  const el = [...(parent?.getElementsByTagName?.("*") || [])].find(n => xmlLocalName(n) === tag.toLowerCase());
+  return el?.textContent?.trim() || "";
+}
+
+function kmlExtendedData(placemark) {
+  const data = {};
+  [...placemark.getElementsByTagName("*")].filter(n => xmlLocalName(n) === "data").forEach(node => {
+    const key = node.getAttribute("name") || kmlText(node, "name");
+    const value = kmlText(node, "value");
+    if (key) data[normalizeText(key)] = value;
+  });
+  [...placemark.getElementsByTagName("*")].filter(n => xmlLocalName(n) === "simpledata").forEach(node => {
+    const key = node.getAttribute("name");
+    const value = node.textContent?.trim() || "";
+    if (key) data[normalizeText(key)] = value;
+  });
+  return data;
+}
+
+function findKmlFolderName(placemark) {
+  let parent = placemark.parentElement;
+  while (parent) {
+    if (xmlLocalName(parent) === "folder") {
+      const name = kmlText(parent, "name");
+      if (name) return name;
+    }
+    parent = parent.parentElement;
+  }
+  return "";
+}
+
+function parseKmlBoxes(text) {
+  const xml = new DOMParser().parseFromString(text, "application/xml");
+  if (xml.getElementsByTagName("parsererror").length) throw new Error("El archivo KML no tiene un formato válido.");
+  const placemarks = [...xml.getElementsByTagName("*")].filter(n => xmlLocalName(n) === "placemark");
+  const boxes = [];
+  placemarks.forEach((placemark, index) => {
+    const point = [...placemark.getElementsByTagName("*")].find(n => xmlLocalName(n) === "point");
+    if (!point) return;
+    const coordinates = kmlText(point, "coordinates").split(",").map(Number);
+    if (!Number.isFinite(coordinates[0]) || !Number.isFinite(coordinates[1])) return;
+    const data = kmlExtendedData(placemark);
+    const name = kmlText(placemark, "name") || `Caja importada ${index + 1}`;
+    const code = data.codigo || data.code || data.cto || data.caja || "";
+    const capacityRaw = data.capacidad || data.capacity || data.puertos || data.ports || "8";
+    const capacity = Math.min(512, Math.max(1, Number.parseInt(capacityRaw, 10) || 8));
+    const statusRaw = normalizeText(data.estado || data.status || "active");
+    const status = statusRaw.includes("mantenimiento") || statusRaw === "maintenance" ? "maintenance" : statusRaw.includes("inactiv") || statusRaw === "inactive" ? "inactive" : "active";
+    const locality = data.localidad || data.locality || data.lugar || findKmlFolderName(placemark) || "";
+    const address = data.direccion || data.address || data.referencia || "";
+    boxes.push({
+      type: "networkBox", name, code, locality, capacity, status,
+      address, latitude: coordinates[1], longitude: coordinates[0],
+      notes: "Importada desde KML"
+    });
+  });
+  return boxes;
+}
+
+async function importNetworkKml(file) {
+  if (!currentUser || !file) return;
+  try {
+    showLoading(true);
+    const text = await file.text();
+    const boxes = parseKmlBoxes(text);
+    if (!boxes.length) throw new Error("No encontré puntos (Point) en el KML para convertirlos en cajas.");
+    const batchSize = 450;
+    for (let start = 0; start < boxes.length; start += batchSize) {
+      const batch = writeBatch(db);
+      boxes.slice(start, start + batchSize).forEach(item => {
+        const refDoc = doc(collection(db, "users", currentUser.uid, "assets"));
+        batch.set(refDoc, { ...item, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      });
+      await batch.commit();
+    }
+    toast(`Listo: ${boxes.length} cajas importadas desde KML.`);
+  } catch (err) {
+    console.error("ERROR IMPORTANDO KML:", err);
+    toast(friendlyError(err), "error");
+  } finally {
+    showLoading(false);
+    const input = $("#importNetworkKmlFile");
+    if (input) input.value = "";
+  }
+}
+
+function openNetworkLocalitiesDialog() {
+  renderNetworkLocalitiesManager();
+  $("#networkLocalitiesDialog")?.showModal();
+}
+
+function renderNetworkLocalitiesManager() {
+  const list = $("#networkLocalitiesList");
+  if (!list) return;
+  list.innerHTML = networkLocalities.length ? networkLocalities.map(item => `<div class="network-locality-item"><span>${escapeHtml(item.name)}</span><button type="button" class="ghost small" data-delete-network-locality="${escapeHtml(item.id)}">Eliminar</button></div>`).join("") : `<div class="empty-state">No hay localidades. Puedes agregar una o cargar las iniciales.</div>`;
+  populateNetworkLocalityControls();
+}
+
+async function addNetworkLocality(name) {
+  if (!currentUser) return;
+  const clean = String(name || "").trim().replace(/\s+/g, " ");
+  if (!clean) return toast("Escribe el nombre de la localidad.", "error");
+  if (networkLocalities.some(l => normalizeText(l.name) === normalizeText(clean))) return toast("Esa localidad ya existe.", "error");
+  try {
+    const refDoc = doc(collection(db, "users", currentUser.uid, "assets"));
+    await setDoc(refDoc, { type: "networkLocality", name: clean, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    $("#newNetworkLocalityName").value = "";
+    toast("Localidad agregada.");
+  } catch (err) { toast(friendlyError(err), "error"); }
+}
+
+async function seedNetworkLocalities() {
+  if (!currentUser) return;
+  if (networkLocalities.length) return toast("Ya tienes localidades registradas. Puedes agregar otras manualmente o importarlas.", "error");
+  const initial = ["Ostuacán", "Xochimilco", "Nuevo Xochimilco", "Viejo Xochimilco", "Plan de Ayala"];
+  try {
+    showLoading(true);
+    const batch = writeBatch(db);
+    initial.forEach(name => {
+      const r = doc(collection(db, "users", currentUser.uid, "assets"));
+      batch.set(r, { type: "networkLocality", name, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    });
+    await batch.commit();
+    toast("Se cargaron las localidades iniciales.");
+  } catch (err) { toast(friendlyError(err), "error"); }
+  finally { showLoading(false); }
+}
+
+async function importNetworkLocalities(file) {
+  if (!currentUser || !file) return;
+  try {
+    showLoading(true);
+    let rows = [];
+    if (/\.csv$/i.test(file.name)) {
+      rows = csvToObjects(await file.text());
+    } else {
+      if (!window.XLSX) throw new Error("No se pudo cargar el lector de Excel. Si estás sin internet, usa CSV.");
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    }
+    const names = rows.map(row => {
+      const key = Object.keys(row).find(k => ["localidad","nombre","name","lugar"].includes(normalizeText(k)));
+      return key ? String(row[key] || "").trim() : "";
+    }).filter(Boolean);
+    const unique = [...new Map(names.map(name => [normalizeText(name), name])).values()]
+      .filter(name => !networkLocalities.some(l => normalizeText(l.name) === normalizeText(name)));
+    if (!unique.length) throw new Error("No encontré localidades nuevas. Usa una columna llamada Localidad o Nombre.");
+    const batchSize = 450;
+    for (let start = 0; start < unique.length; start += batchSize) {
+      const batch = writeBatch(db);
+      unique.slice(start, start + batchSize).forEach(name => {
+        const r = doc(collection(db, "users", currentUser.uid, "assets"));
+        batch.set(r, { type: "networkLocality", name, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      });
+      await batch.commit();
+    }
+    toast(`Listo: ${unique.length} localidades importadas.`);
+  } catch (err) {
+    console.error("ERROR IMPORTANDO LOCALIDADES:", err);
+    toast(friendlyError(err), "error");
+  } finally {
+    showLoading(false);
+    const input = $("#importNetworkLocalitiesFile");
+    if (input) input.value = "";
+  }
+}
+
+async function deleteNetworkLocality(id) {
+  if (!currentUser || !id) return;
+  const locality = networkLocalities.find(l => l.id === id);
+  if (!locality) return;
+  const used = networkBoxes.filter(b => normalizeText(b.locality) === normalizeText(locality.name)).length;
+  if (used) return toast(`No se puede eliminar: ${used} caja(s) usan esta localidad.`, "error");
+  if (!confirm(`¿Eliminar la localidad «${locality.name}»?`)) return;
+  try {
+    await deleteDoc(doc(db, "users", currentUser.uid, "assets", id));
+    toast("Localidad eliminada.");
+  } catch (err) { toast(friendlyError(err), "error"); }
 }
 
 async function seedNetworkExamples() {
@@ -4105,6 +3902,17 @@ $("#networkSatelliteBtn")?.addEventListener("click", () => {
   }
 });
 $("#seedNetworkExamplesBtn")?.addEventListener("click", seedNetworkExamples);
+$("#importNetworkKmlBtn")?.addEventListener("click", () => $("#importNetworkKmlFile")?.click());
+$("#importNetworkKmlFile")?.addEventListener("change", e => { const file = e.target.files?.[0]; if (file) importNetworkKml(file); });
+$("#networkLocalityFilter")?.addEventListener("change", () => { renderNetwork(); const first = filteredNetworkBoxes()[0]; if (first) focusNetworkBox(first); });
+$("#networkBoxSearch")?.addEventListener("input", () => { renderNetwork(); });
+$("#manageNetworkLocalitiesBtn")?.addEventListener("click", openNetworkLocalitiesDialog);
+$("#addNetworkLocalityBtn")?.addEventListener("click", () => addNetworkLocality($("#newNetworkLocalityName")?.value));
+$("#newNetworkLocalityName")?.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addNetworkLocality(e.target.value); } });
+$("#seedNetworkLocalitiesBtn")?.addEventListener("click", seedNetworkLocalities);
+$("#importNetworkLocalitiesBtn")?.addEventListener("click", () => $("#importNetworkLocalitiesFile")?.click());
+$("#importNetworkLocalitiesFile")?.addEventListener("change", e => { const file = e.target.files?.[0]; if (file) importNetworkLocalities(file); });
+$("#networkLocalitiesList")?.addEventListener("click", e => { const btn = e.target.closest("[data-delete-network-locality]"); if (btn) deleteNetworkLocality(btn.dataset.deleteNetworkLocality); });
 $("#networkBoxForm")?.addEventListener("submit", saveNetworkBox);
 $("#deleteNetworkBoxBtn")?.addEventListener("click", deleteSelectedNetworkBox);
 $("#deactivateNetworkBoxBtn")?.addEventListener("click", deactivateSelectedNetworkBox);
@@ -4117,7 +3925,7 @@ $("#networkBoxesList")?.addEventListener("click", e => {
   selectedNetworkBoxId = item.dataset.networkBox;
   renderNetwork();
   const box = networkBoxes.find(b => b.id === selectedNetworkBoxId);
-  if (box && networkMap && Number.isFinite(Number(box.latitude)) && Number.isFinite(Number(box.longitude))) networkMap.setView([Number(box.latitude), Number(box.longitude)], Math.max(networkMap.getZoom(), 16));
+  if (box) focusNetworkBox(box);
 });
 
 $("#networkBoxDetail")?.addEventListener("click", e => {
