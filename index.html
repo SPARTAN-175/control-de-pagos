@@ -427,6 +427,15 @@
 
         <button
           class="nav-item"
+          data-section="mikrotik"
+          type="button"
+        >
+          <span>◉</span>
+          MikroTik
+        </button>
+
+        <button
+          class="nav-item"
           data-section="payments"
           type="button"
         >
@@ -1237,6 +1246,90 @@
 
 
 
+
+
+      <!-- =================================================
+           MIKROTIK / CONECTOR
+           ================================================= -->
+
+      <section
+        id="mikrotikSection"
+        class="page-section hidden"
+      >
+
+        <div class="page-head">
+          <div>
+            <h1>MikroTik</h1>
+            <p class="muted">Conexión de solo lectura para consultar los clientes reales del router.</p>
+          </div>
+          <span id="mikrotikOverallStatus" class="connector-status pending">Sin conectar</span>
+        </div>
+
+        <div class="mikrotik-grid">
+          <article class="section-card">
+            <div class="section-head">
+              <div>
+                <h3>Conector CAHESA</h3>
+                <p class="muted">El conector se ejecuta dentro de la red donde está el MikroTik. Nunca guardamos aquí la contraseña del router.</p>
+              </div>
+              <span id="connectorStatusBadge" class="connector-status pending">No vinculado</span>
+            </div>
+
+            <div class="connector-meta" id="connectorMeta">
+              <div><span>Conector</span><strong>—</strong></div>
+              <div><span>Último reporte</span><strong>—</strong></div>
+              <div><span>MikroTik</span><strong>—</strong></div>
+            </div>
+
+            <div class="connector-actions">
+              <button id="createConnectorPairingBtn" class="primary" type="button">Generar código de vinculación</button>
+              <button id="refreshMikrotikBtn" class="ghost" type="button">Actualizar</button>
+            </div>
+
+            <div id="pairingCodeBox" class="pairing-code-box hidden">
+              <span>Código temporal</span>
+              <strong id="pairingCodeValue">——</strong>
+              <small>Caduca en 10 minutos y solo puede utilizarse una vez.</small>
+            </div>
+          </article>
+
+          <article class="section-card">
+            <div class="section-head">
+              <div>
+                <h3>Resumen técnico</h3>
+                <p class="muted">Datos obtenidos directamente desde PPP Secrets y PPP Active.</p>
+              </div>
+            </div>
+            <div class="mikrotik-stats" id="mikrotikStats">
+              <div><strong>—</strong><span>PPP Secrets</span></div>
+              <div><strong>—</strong><span>Habilitados</span></div>
+              <div><strong>—</strong><span>Suspendidos</span></div>
+              <div><strong>—</strong><span>Activos</span></div>
+            </div>
+          </article>
+        </div>
+
+        <article class="section-card mikrotik-client-card">
+          <div class="section-head">
+            <div>
+              <h3>Clientes del MikroTik</h3>
+              <p class="muted">Esta primera etapa es únicamente de lectura. Los datos no modifican el router.</p>
+            </div>
+            <input id="mikrotikClientSearch" class="compact-search" type="search" placeholder="Buscar PPPoE, nombre o perfil…">
+          </div>
+          <div id="mikrotikClientsTable" class="mikrotik-table-wrap">
+            <div class="empty-state">Vincula un conector para consultar los clientes reales.</div>
+          </div>
+        </article>
+
+        <div class="section-card readonly-notice">
+          <strong>Modo protegido · SOLO LECTURA</strong>
+          <span>En esta versión CAHESA únicamente consulta información. No existe ningún botón para suspender, reactivar, cambiar velocidades ni modificar PPP Secrets.</span>
+        </div>
+
+      </section>
+
+
       <!-- =================================================
            PERFIL
            ================================================= -->
@@ -1346,38 +1439,6 @@
 
 
         <!-- SEGURIDAD -->
-
-        <!-- INTEGRACIÓN MIKROTIK / CAHESA CONNECTOR -->
-        <div class="section-card connector-card">
-          <div class="section-head connector-head">
-            <div>
-              <h3>🔌 Conexión con MikroTik</h3>
-              <p class="muted">Conecta un CAHESA Connector instalado en una computadora dentro de tu red.</p>
-            </div>
-            <span id="connectorStatusBadge" class="connector-status-badge offline">Sin conectar</span>
-          </div>
-
-          <div class="connector-status-grid">
-            <div><strong id="connectorDeviceName">—</strong><span>Connector</span></div>
-            <div><strong id="connectorMikrotik">—</strong><span>MikroTik</span></div>
-            <div><strong id="connectorPppSecrets">—</strong><span>PPPoE</span></div>
-            <div><strong id="connectorPppActive">—</strong><span>Activos</span></div>
-            <div><strong id="connectorPppDisabled">—</strong><span>Suspendidos</span></div>
-          </div>
-
-          <div id="connectorPairingArea" class="connector-pairing-area">
-            <p class="muted">Genera un código para vincular el Connector de Windows con esta cuenta de CAHESA.</p>
-            <button id="createConnectorPairingBtn" class="primary" type="button">Generar código de vinculación</button>
-            <div id="connectorPairingCodeWrap" class="connector-code-wrap hidden">
-              <span>Código de vinculación</span>
-              <strong id="connectorPairingCode">—</strong>
-              <small>Es temporal para esta instalación. Escríbelo en CAHESA Connector.</small>
-            </div>
-          </div>
-
-          <div id="connectorInfo" class="connector-info muted">Todavía no hay un Connector vinculado.</div>
-        </div>
-
 
         <div class="section-card danger-card">
 
