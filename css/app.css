@@ -109,6 +109,13 @@
 .payment-calendar thead th{white-space:nowrap}
 @media(max-width:600px){.payment-calendar-scroll{max-width:100%;overflow-x:auto}.payment-calendar-client{position:sticky;left:0}.field-hint{font-size:10.5px}}
 
+
+/* =========================================================
+   MAPA DE RED · KML + LOCALIDADES + BUSCADOR
+========================================================= */
+.network-filters{display:grid;grid-template-columns:1fr 1.25fr;gap:9px;margin:12px 0 8px}.network-filter-field{display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:750;color:#475569}.network-filter-field input,.network-filter-field select{width:100%;border:1px solid #d8dee9;border-radius:10px;padding:10px 11px;background:#fff;outline:none}.network-filter-field input:focus,.network-filter-field select:focus{border-color:#475569;box-shadow:0 0 0 3px rgba(71,85,105,.1)}.network-locality-actions{display:flex;justify-content:flex-end;margin-bottom:8px}.small-text{font-size:11px}.network-locality-manager{display:flex;flex-direction:column;gap:12px}.network-locality-add{display:grid;grid-template-columns:1fr auto;gap:8px}.network-locality-add input{border:1px solid #d8dee9;border-radius:10px;padding:11px 12px}.network-locality-import-actions{display:flex;gap:8px;flex-wrap:wrap}.network-localities-list{display:flex;flex-direction:column;gap:7px;max-height:320px;overflow:auto;padding:2px}.network-locality-item{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #e7ebf2;border-radius:10px;padding:9px 10px;background:#f8fafc}.network-locality-item span{font-weight:700}.network-mini-popup{display:flex;flex-direction:column;gap:3px;min-width:170px;font-size:11px}.network-mini-popup strong{font-size:14px;color:#172033;margin-bottom:2px}.network-mini-popup span{color:#64748b}.network-box-item{min-width:0}.network-box-item .grow{min-width:0}.network-box-item .grow strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.network-box-item .grow span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}@media(max-width:600px){.network-filters{grid-template-columns:1fr}.network-locality-add{grid-template-columns:1fr}.network-locality-add button,.network-locality-import-actions button{width:100%}.network-locality-import-actions{display:grid;grid-template-columns:1fr}.network-locality-actions{justify-content:stretch}.network-locality-actions button{width:100%}}
+
+
 /* =========================================================
    MIKROTIK / CONECTOR — SOLO LECTURA
 ========================================================= */
