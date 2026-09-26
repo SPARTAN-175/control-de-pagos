@@ -12,11 +12,6 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 
 import {
-  getFunctions,
-  httpsCallable
-} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-functions.js";
-
-import {
   getFirestore,
   doc,
   setDoc,
@@ -38,6 +33,11 @@ import {
   uploadBytes,
   getDownloadURL
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-storage.js";
+
+import {
+  getFunctions,
+  httpsCallable
+} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-functions.js";
 
 import { firebaseConfig } from "../firebase-config.js";
 
@@ -74,6 +74,7 @@ let profile = {};
 let clients = [];
 let payments = [];
 let networkBoxes = [];
+let networkLocalities = [];
 
 let unsubClients = null;
 let unsubPayments = null;
@@ -1079,8 +1080,10 @@ onAuthStateChanged(
 
       if (unsubNetworkBoxes)
         unsubNetworkBoxes();
+
       if (unsubConnectors)
         unsubConnectors();
+
       if (unsubMikrotikSnapshot)
         unsubMikrotikSnapshot();
 
@@ -1177,8 +1180,10 @@ function subscribeData() {
 
   if (unsubNetworkBoxes)
     unsubNetworkBoxes();
+
   if (unsubConnectors)
     unsubConnectors();
+
   if (unsubMikrotikSnapshot)
     unsubMikrotikSnapshot();
 
@@ -1281,8 +1286,12 @@ function subscribeData() {
   unsubNetworkBoxes = onSnapshot(
     aq,
     snapshot => {
-      networkBoxes = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+      const assets = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      networkBoxes = assets
         .filter(item => item.type === "networkBox")
+        .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "es"));
+      networkLocalities = assets
+        .filter(item => item.type === "networkLocality")
         .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "es"));
       renderAll();
     },
@@ -1292,12 +1301,7 @@ function subscribeData() {
   subscribeConnectors();
   }
 
-
-
-/* =========================================================
-   MIKROTIK / CONECTOR — SOLO LECTURA
-========================================================= */
-
+  
 function formatConnectorDate(value) {
   if (!value) return "—";
   const date = value?.toDate ? value.toDate() : new Date(value);
@@ -1422,6 +1426,7 @@ function renderAll() {
   renderHistory();
   renderPaymentCalendar();
   renderNetwork();
+  renderMikrotikPanel();
 
 }
 
@@ -2472,10 +2477,7 @@ function renderPaymentOverdueOptions(client) {
 }
 
 
-function renderPaymentCalendar() {
-  const host = $("#paymentCalendar");
-  if (!host) return;
-
+function buildPaymentCalendarHtml() {
   const active = clients.filter(c => c.active !== false);
   const now = new Date();
   const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -2486,11 +2488,10 @@ function renderPaymentCalendar() {
   });
 
   if (!active.length) {
-    host.innerHTML = `<div class="empty-state">Agrega clientes para ver su calendario mensual.</div>`;
-    return;
+    return `<div class="empty-state">Agrega clientes para ver su calendario mensual.</div>`;
   }
 
-  host.innerHTML = `
+  return `
     <div class="payment-calendar-scroll">
       <table class="payment-calendar">
         <thead>
@@ -2535,6 +2536,13 @@ function renderPaymentCalendar() {
   `;
 }
 
+function renderPaymentCalendar() {
+  const html = buildPaymentCalendarHtml();
+  const host = $("#paymentCalendar");
+  const standalone = $("#paymentCalendarStandalone");
+  if (host) host.innerHTML = html;
+  if (standalone) standalone.innerHTML = html;
+}
 
 /* =========================================================
    DIALOGO DE PAGO
@@ -3033,6 +3041,8 @@ function goSection(name) {
 
     clients: "Clientes",
 
+    "payment-calendar": "Seguimiento de pagos",
+
     network: "Mapa de red",
 
     mikrotik: "MikroTik",
@@ -3465,6 +3475,51 @@ function initNetworkMap() {
   renderNetworkMarkers();
 }
 
+function populateNetworkLocalityControls() {
+  const select = $("#networkLocalityFilter");
+  const boxSelect = $("#networkBoxLocality");
+  const currentFilter = select?.value || "";
+  const currentBoxLocality = boxSelect?.value || "";
+  const options = networkLocalities.map(l => `<option value="${escapeHtml(l.name)}">${escapeHtml(l.name)}</option>`).join("");
+  if (select) {
+    select.innerHTML = `<option value="">Todas las localidades</option>${options}`;
+    if (networkLocalities.some(l => l.name === currentFilter)) select.value = currentFilter;
+  }
+  if (boxSelect) {
+    boxSelect.innerHTML = `<option value="">Sin localidad</option>${options}`;
+    if (networkLocalities.some(l => l.name === currentBoxLocality)) boxSelect.value = currentBoxLocality;
+  }
+}
+
+function filteredNetworkBoxes() {
+  const locality = $("#networkLocalityFilter")?.value || "";
+  const search = String($("#networkBoxSearch")?.value || "").trim().toLocaleLowerCase("es-MX");
+  return networkBoxes.filter(box => {
+    if (locality && String(box.locality || "") !== locality) return false;
+    if (!search) return true;
+    return [box.name, box.code, box.address, box.locality, box.notes].some(v => String(v || "").toLocaleLowerCase("es-MX").includes(search));
+  });
+}
+
+function focusNetworkBox(box) {
+  if (!box || !networkMap) return;
+  const lat = Number(box.latitude), lng = Number(box.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    toast("Esta caja no tiene coordenadas válidas.", "error");
+    return;
+  }
+  selectedNetworkBoxId = box.id;
+  networkMap.setView([lat, lng], Math.max(networkMap.getZoom(), 17), { animate: true });
+  renderNetworkDetail();
+  const count = networkBoxClients(box.id).length;
+  const capacity = Math.max(1, Number(box.capacity || 1));
+  const free = Math.max(0, capacity - count);
+  L.popup({ maxWidth: 240 })
+    .setLatLng([lat, lng])
+    .setContent(`<div class="network-mini-popup"><strong>${escapeHtml(box.name || "Caja")}</strong><span>${escapeHtml(box.code || "Sin código")}</span>${box.locality ? `<span>📍 ${escapeHtml(box.locality)}</span>` : ""}<span>👥 ${count} clientes · ${free} libres</span><span>● ${networkStatusLabel(box.status)}</span></div>`)
+    .openOn(networkMap);
+}
+
 function renderNetwork() {
   const list = $("#networkBoxesList");
   const detail = $("#networkBoxDetail");
@@ -3472,22 +3527,27 @@ function renderNetwork() {
   if (!list || !detail || !stats) return;
 
   populateClientNetworkSelect();
+  populateNetworkLocalityControls();
   const locatedClients = clients.filter(c => Number.isFinite(Number(c.latitude)) && Number.isFinite(Number(c.longitude)));
-  stats.textContent = `${networkBoxes.length} ${networkBoxes.length === 1 ? "caja" : "cajas"} · ${locatedClients.length} ${locatedClients.length === 1 ? "cliente ubicado" : "clientes ubicados"}`;
+  stats.textContent = `${networkBoxes.length} ${networkBoxes.length === 1 ? "caja" : "cajas"} · ${locatedClients.length} ${locatedClients.length === 1 ? "cliente ubicado" : "clientes ubicados"} · ${networkLocalities.length} ${networkLocalities.length === 1 ? "localidad" : "localidades"}`;
 
+  const visibleBoxes = filteredNetworkBoxes();
   if (!networkBoxes.length) {
     list.className = "network-box-list empty-state";
-    list.textContent = "No hay cajas registradas.";
-    detail.innerHTML = `<div class="empty-state">Crea una caja para comenzar a construir tu mapa de red.</div>`;
+    list.textContent = "No hay cajas registradas. Puedes importar un KML o crear una caja.";
+    detail.innerHTML = `<div class="empty-state">Crea o importa cajas para comenzar a construir tu mapa de red.</div>`;
+  } else if (!visibleBoxes.length) {
+    list.className = "network-box-list empty-state";
+    list.textContent = "No hay cajas que coincidan con el filtro.";
   } else {
     list.className = "network-box-list";
-    list.innerHTML = networkBoxes.map(box => {
+    list.innerHTML = visibleBoxes.map(box => {
       const count = networkBoxClients(box.id).length;
       const active = box.id === selectedNetworkBoxId ? " active" : "";
       const status = box.status || "active";
       return `<button type="button" class="network-box-item${active}" data-network-box="${escapeHtml(box.id)}">
         <span class="network-box-dot ${status}"></span>
-        <span class="grow"><strong>${escapeHtml(box.name || "Caja sin nombre")}</strong><span>${escapeHtml(box.code || "Sin código")} · ${count}/${Number(box.capacity || 0)} puertos ocupados</span></span>
+        <span class="grow"><strong>${escapeHtml(box.name || "Caja sin nombre")}</strong><span>${escapeHtml(box.code || "Sin código")} · ${escapeHtml(box.locality || "Sin localidad")} · ${count}/${Number(box.capacity || 0)} puertos ocupados</span></span>
       </button>`;
     }).join("");
   }
@@ -3513,7 +3573,7 @@ function renderNetworkDetail() {
 
   detail.innerHTML = `
     <div class="section-head">
-      <div><h3>${escapeHtml(box.name || "Caja de red")}</h3><p class="muted">${escapeHtml(box.code || "Sin código")} · ${networkStatusLabel(box.status)}</p></div>
+      <div><h3>${escapeHtml(box.name || "Caja de red")}</h3><p class="muted">${escapeHtml(box.code || "Sin código")} · ${escapeHtml(box.locality || "Sin localidad")} · ${networkStatusLabel(box.status)}</p></div>
       <button type="button" class="ghost small" data-edit-network-box="${escapeHtml(box.id)}">Editar</button>
     </div>
     <div class="network-detail-meta">
@@ -3546,7 +3606,9 @@ function renderNetworkMarkers() {
     const marker = L.marker([lat, lng], {
       icon: L.divIcon({ className: "", html: `<div class="network-marker-pin"><span>⌂</span><small>${escapeHtml(box.code || box.name || "Caja")}</small></div>`, iconSize: [100, 42], iconAnchor: [50, 36] })
     });
-    marker.bindPopup(`<strong>${escapeHtml(box.name || "Caja")}</strong><br>${escapeHtml(box.code || "Sin código")}<br>${count}/${Number(box.capacity || 0)} puertos ocupados<br>${networkStatusLabel(box.status)}`);
+    const capacity = Math.max(1, Number(box.capacity || 1));
+    const free = Math.max(0, capacity - count);
+    marker.bindPopup(`<div class="network-mini-popup"><strong>${escapeHtml(box.name || "Caja")}</strong><span>${escapeHtml(box.code || "Sin código")}</span>${box.locality ? `<span>📍 ${escapeHtml(box.locality)}</span>` : ""}<span>👥 ${count} clientes · ${free} puertos libres</span><span>● ${networkStatusLabel(box.status)}</span></div>`);
     marker.on("click", () => { selectedNetworkBoxId = box.id; renderNetwork(); });
     marker.addTo(networkMarkersLayer);
   });
@@ -3592,6 +3654,8 @@ function openNetworkBoxDialog(box = null, coordinateOverride = null) {
   $("#networkBoxId").value = box?.id || "";
   $("#networkBoxName").value = box?.name || "";
   $("#networkBoxCode").value = box?.code || "";
+  populateNetworkLocalityControls();
+  $("#networkBoxLocality").value = box?.locality || "";
   $("#networkBoxCapacity").value = box?.capacity ?? 8;
   $("#networkBoxStatus").value = box?.status || "active";
   $("#networkBoxAddress").value = box?.address || "";
@@ -3623,6 +3687,7 @@ async function saveNetworkBox(e) {
     const id = $("#networkBoxId").value;
     const name = $("#networkBoxName").value.trim();
     const code = $("#networkBoxCode").value.trim();
+    const locality = $("#networkBoxLocality").value.trim();
     const capacity = Number($("#networkBoxCapacity").value);
     const latitude = Number($("#networkBoxLatitude").value);
     const longitude = Number($("#networkBoxLongitude").value);
@@ -3634,7 +3699,7 @@ async function saveNetworkBox(e) {
     if (connected.some(c => Number(c.networkPort) > capacity)) throw new Error("No puedes reducir la capacidad porque hay clientes conectados en puertos superiores.");
     const refDoc = id ? doc(db, "users", currentUser.uid, "assets", id) : doc(collection(db, "users", currentUser.uid, "assets"));
     await setDoc(refDoc, {
-      type: "networkBox", name, code, capacity,
+      type: "networkBox", name, code, locality, capacity,
       status: $("#networkBoxStatus").value,
       address: $("#networkBoxAddress").value.trim(),
       latitude, longitude,
@@ -3691,6 +3756,193 @@ async function deleteSelectedNetworkBox() {
     console.error("ERROR ELIMINANDO CAJA:", err);
     toast(friendlyError(err), "error");
   }
+}
+
+function xmlLocalName(node) {
+  return String(node?.localName || node?.nodeName || "").split(":").pop().toLowerCase();
+}
+
+function kmlText(parent, tag) {
+  const el = [...(parent?.getElementsByTagName?.("*") || [])].find(n => xmlLocalName(n) === tag.toLowerCase());
+  return el?.textContent?.trim() || "";
+}
+
+function kmlExtendedData(placemark) {
+  const data = {};
+  [...placemark.getElementsByTagName("*")].filter(n => xmlLocalName(n) === "data").forEach(node => {
+    const key = node.getAttribute("name") || kmlText(node, "name");
+    const value = kmlText(node, "value");
+    if (key) data[normalizeText(key)] = value;
+  });
+  [...placemark.getElementsByTagName("*")].filter(n => xmlLocalName(n) === "simpledata").forEach(node => {
+    const key = node.getAttribute("name");
+    const value = node.textContent?.trim() || "";
+    if (key) data[normalizeText(key)] = value;
+  });
+  return data;
+}
+
+function findKmlFolderName(placemark) {
+  let parent = placemark.parentElement;
+  while (parent) {
+    if (xmlLocalName(parent) === "folder") {
+      const name = kmlText(parent, "name");
+      if (name) return name;
+    }
+    parent = parent.parentElement;
+  }
+  return "";
+}
+
+function parseKmlBoxes(text) {
+  const xml = new DOMParser().parseFromString(text, "application/xml");
+  if (xml.getElementsByTagName("parsererror").length) throw new Error("El archivo KML no tiene un formato válido.");
+  const placemarks = [...xml.getElementsByTagName("*")].filter(n => xmlLocalName(n) === "placemark");
+  const boxes = [];
+  placemarks.forEach((placemark, index) => {
+    const point = [...placemark.getElementsByTagName("*")].find(n => xmlLocalName(n) === "point");
+    if (!point) return;
+    const coordinates = kmlText(point, "coordinates").split(",").map(Number);
+    if (!Number.isFinite(coordinates[0]) || !Number.isFinite(coordinates[1])) return;
+    const data = kmlExtendedData(placemark);
+    const name = kmlText(placemark, "name") || `Caja importada ${index + 1}`;
+    const code = data.codigo || data.code || data.cto || data.caja || "";
+    const capacityRaw = data.capacidad || data.capacity || data.puertos || data.ports || "8";
+    const capacity = Math.min(512, Math.max(1, Number.parseInt(capacityRaw, 10) || 8));
+    const statusRaw = normalizeText(data.estado || data.status || "active");
+    const status = statusRaw.includes("mantenimiento") || statusRaw === "maintenance" ? "maintenance" : statusRaw.includes("inactiv") || statusRaw === "inactive" ? "inactive" : "active";
+    const locality = data.localidad || data.locality || data.lugar || findKmlFolderName(placemark) || "";
+    const address = data.direccion || data.address || data.referencia || "";
+    boxes.push({
+      type: "networkBox", name, code, locality, capacity, status,
+      address, latitude: coordinates[1], longitude: coordinates[0],
+      notes: "Importada desde KML"
+    });
+  });
+  return boxes;
+}
+
+async function importNetworkKml(file) {
+  if (!currentUser || !file) return;
+  try {
+    showLoading(true);
+    const text = await file.text();
+    const boxes = parseKmlBoxes(text);
+    if (!boxes.length) throw new Error("No encontré puntos (Point) en el KML para convertirlos en cajas.");
+    const batchSize = 450;
+    for (let start = 0; start < boxes.length; start += batchSize) {
+      const batch = writeBatch(db);
+      boxes.slice(start, start + batchSize).forEach(item => {
+        const refDoc = doc(collection(db, "users", currentUser.uid, "assets"));
+        batch.set(refDoc, { ...item, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      });
+      await batch.commit();
+    }
+    toast(`Listo: ${boxes.length} cajas importadas desde KML.`);
+  } catch (err) {
+    console.error("ERROR IMPORTANDO KML:", err);
+    toast(friendlyError(err), "error");
+  } finally {
+    showLoading(false);
+    const input = $("#importNetworkKmlFile");
+    if (input) input.value = "";
+  }
+}
+
+function openNetworkLocalitiesDialog() {
+  renderNetworkLocalitiesManager();
+  $("#networkLocalitiesDialog")?.showModal();
+}
+
+function renderNetworkLocalitiesManager() {
+  const list = $("#networkLocalitiesList");
+  if (!list) return;
+  list.innerHTML = networkLocalities.length ? networkLocalities.map(item => `<div class="network-locality-item"><span>${escapeHtml(item.name)}</span><button type="button" class="ghost small" data-delete-network-locality="${escapeHtml(item.id)}">Eliminar</button></div>`).join("") : `<div class="empty-state">No hay localidades. Puedes agregar una o cargar las iniciales.</div>`;
+  populateNetworkLocalityControls();
+}
+
+async function addNetworkLocality(name) {
+  if (!currentUser) return;
+  const clean = String(name || "").trim().replace(/\s+/g, " ");
+  if (!clean) return toast("Escribe el nombre de la localidad.", "error");
+  if (networkLocalities.some(l => normalizeText(l.name) === normalizeText(clean))) return toast("Esa localidad ya existe.", "error");
+  try {
+    const refDoc = doc(collection(db, "users", currentUser.uid, "assets"));
+    await setDoc(refDoc, { type: "networkLocality", name: clean, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    $("#newNetworkLocalityName").value = "";
+    toast("Localidad agregada.");
+  } catch (err) { toast(friendlyError(err), "error"); }
+}
+
+async function seedNetworkLocalities() {
+  if (!currentUser) return;
+  if (networkLocalities.length) return toast("Ya tienes localidades registradas. Puedes agregar otras manualmente o importarlas.", "error");
+  const initial = ["Ostuacán", "Xochimilco", "Nuevo Xochimilco", "Viejo Xochimilco", "Plan de Ayala"];
+  try {
+    showLoading(true);
+    const batch = writeBatch(db);
+    initial.forEach(name => {
+      const r = doc(collection(db, "users", currentUser.uid, "assets"));
+      batch.set(r, { type: "networkLocality", name, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    });
+    await batch.commit();
+    toast("Se cargaron las localidades iniciales.");
+  } catch (err) { toast(friendlyError(err), "error"); }
+  finally { showLoading(false); }
+}
+
+async function importNetworkLocalities(file) {
+  if (!currentUser || !file) return;
+  try {
+    showLoading(true);
+    let rows = [];
+    if (/\.csv$/i.test(file.name)) {
+      rows = csvToObjects(await file.text());
+    } else {
+      if (!window.XLSX) throw new Error("No se pudo cargar el lector de Excel. Si estás sin internet, usa CSV.");
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    }
+    const names = rows.map(row => {
+      const key = Object.keys(row).find(k => ["localidad","nombre","name","lugar"].includes(normalizeText(k)));
+      return key ? String(row[key] || "").trim() : "";
+    }).filter(Boolean);
+    const unique = [...new Map(names.map(name => [normalizeText(name), name])).values()]
+      .filter(name => !networkLocalities.some(l => normalizeText(l.name) === normalizeText(name)));
+    if (!unique.length) throw new Error("No encontré localidades nuevas. Usa una columna llamada Localidad o Nombre.");
+    const batchSize = 450;
+    for (let start = 0; start < unique.length; start += batchSize) {
+      const batch = writeBatch(db);
+      unique.slice(start, start + batchSize).forEach(name => {
+        const r = doc(collection(db, "users", currentUser.uid, "assets"));
+        batch.set(r, { type: "networkLocality", name, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      });
+      await batch.commit();
+    }
+    toast(`Listo: ${unique.length} localidades importadas.`);
+  } catch (err) {
+    console.error("ERROR IMPORTANDO LOCALIDADES:", err);
+    toast(friendlyError(err), "error");
+  } finally {
+    showLoading(false);
+    const input = $("#importNetworkLocalitiesFile");
+    if (input) input.value = "";
+  }
+}
+
+async function deleteNetworkLocality(id) {
+  if (!currentUser || !id) return;
+  const locality = networkLocalities.find(l => l.id === id);
+  if (!locality) return;
+  const used = networkBoxes.filter(b => normalizeText(b.locality) === normalizeText(locality.name)).length;
+  if (used) return toast(`No se puede eliminar: ${used} caja(s) usan esta localidad.`, "error");
+  if (!confirm(`¿Eliminar la localidad «${locality.name}»?`)) return;
+  try {
+    await deleteDoc(doc(db, "users", currentUser.uid, "assets", id));
+    toast("Localidad eliminada.");
+  } catch (err) { toast(friendlyError(err), "error"); }
 }
 
 async function seedNetworkExamples() {
@@ -3763,6 +4015,17 @@ $("#networkSatelliteBtn")?.addEventListener("click", () => {
   }
 });
 $("#seedNetworkExamplesBtn")?.addEventListener("click", seedNetworkExamples);
+$("#importNetworkKmlBtn")?.addEventListener("click", () => $("#importNetworkKmlFile")?.click());
+$("#importNetworkKmlFile")?.addEventListener("change", e => { const file = e.target.files?.[0]; if (file) importNetworkKml(file); });
+$("#networkLocalityFilter")?.addEventListener("change", () => { renderNetwork(); const first = filteredNetworkBoxes()[0]; if (first) focusNetworkBox(first); });
+$("#networkBoxSearch")?.addEventListener("input", () => { renderNetwork(); });
+$("#manageNetworkLocalitiesBtn")?.addEventListener("click", openNetworkLocalitiesDialog);
+$("#addNetworkLocalityBtn")?.addEventListener("click", () => addNetworkLocality($("#newNetworkLocalityName")?.value));
+$("#newNetworkLocalityName")?.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addNetworkLocality(e.target.value); } });
+$("#seedNetworkLocalitiesBtn")?.addEventListener("click", seedNetworkLocalities);
+$("#importNetworkLocalitiesBtn")?.addEventListener("click", () => $("#importNetworkLocalitiesFile")?.click());
+$("#importNetworkLocalitiesFile")?.addEventListener("change", e => { const file = e.target.files?.[0]; if (file) importNetworkLocalities(file); });
+$("#networkLocalitiesList")?.addEventListener("click", e => { const btn = e.target.closest("[data-delete-network-locality]"); if (btn) deleteNetworkLocality(btn.dataset.deleteNetworkLocality); });
 $("#networkBoxForm")?.addEventListener("submit", saveNetworkBox);
 $("#deleteNetworkBoxBtn")?.addEventListener("click", deleteSelectedNetworkBox);
 $("#deactivateNetworkBoxBtn")?.addEventListener("click", deactivateSelectedNetworkBox);
@@ -3775,7 +4038,7 @@ $("#networkBoxesList")?.addEventListener("click", e => {
   selectedNetworkBoxId = item.dataset.networkBox;
   renderNetwork();
   const box = networkBoxes.find(b => b.id === selectedNetworkBoxId);
-  if (box && networkMap && Number.isFinite(Number(box.latitude)) && Number.isFinite(Number(box.longitude))) networkMap.setView([Number(box.latitude), Number(box.longitude)], Math.max(networkMap.getZoom(), 16));
+  if (box) focusNetworkBox(box);
 });
 
 $("#networkBoxDetail")?.addEventListener("click", e => {
