@@ -1,22 +1,109 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // CONTROL DE PAGOS - CAHESA
     match /users/{userId} {
-      allow read, create, update: if request.auth != null && request.auth.uid == userId;
+      allow read, create, update: if isCahesaUser(userId);
       allow delete: if false;
 
       match /clients/{clientId} {
-        allow read, create, update, delete: if request.auth != null && request.auth.uid == userId;
+        allow read, create, update, delete: if isCahesaUser(userId);
       }
 
       match /payments/{paymentId} {
-        allow read, create, update, delete: if request.auth != null && request.auth.uid == userId;
+        allow read, create, update, delete: if isCahesaUser(userId);
       }
 
       match /assets/{assetId} {
-        allow read, create, update, delete: if request.auth != null && request.auth.uid == userId;
+        allow read, create, update, delete: if isCahesaUser(userId);
       }
+
+      // El navegador del administrador puede LEER el estado del conector.
+      // Las escrituras las realiza exclusivamente el backend de CAHESA.
+      match /connectors/{connectorId} {
+        allow read: if isCahesaUser(userId);
+        allow create, update, delete: if false;
+
+        match /snapshots/{snapshotId} {
+          allow read: if isCahesaUser(userId);
+          allow create, update, delete: if false;
+        }
+      }
+    }
+
+    // Las solicitudes de vinculación nunca son accesibles directamente
+    // desde el navegador. Solo las Cloud Functions usan esta colección.
+    match /connectorPairings/{pairingId} {
+      allow read, create, update, delete: if false;
+    }
+
+    // PIÑATAS CARLOS
+    match /pinatas/{pinataId} {
+      allow read: if resource.data.status == 'published' || isAdmin();
+      allow create, update, delete: if isAdmin();
+
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if isSignedIn()
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.name is string
+          && request.resource.data.name.size() >= 1
+          && request.resource.data.name.size() <= 80
+          && request.resource.data.text is string
+          && request.resource.data.text.size() >= 1
+          && request.resource.data.text.size() <= 1000
+          && request.resource.data.stars is int
+          && request.resource.data.stars >= 1
+          && request.resource.data.stars <= 5;
+        allow update, delete: if isAdmin()
+          || (isSignedIn()
+              && resource.data.uid == request.auth.uid
+              && request.resource.data.uid == request.auth.uid);
+      }
+
+      match /ratings/{uid} {
+        allow read: if true;
+        allow create, update: if isSignedIn()
+          && uid == request.auth.uid
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.value is int
+          && request.resource.data.value >= 1
+          && request.resource.data.value <= 5;
+        allow delete: if isAdmin() || (isSignedIn() && uid == request.auth.uid);
+      }
+    }
+
+    match /pinatasOrders/{orderId} {
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 2000;
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /siteSettings/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isCahesaUser(userId) {
+      return request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.uid == 'JNxuv44ZLgTLWEHJ0NL01avgcdy1';
     }
   }
 }
