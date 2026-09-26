@@ -12,6 +12,11 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 
 import {
+  getFunctions,
+  httpsCallable
+} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-functions.js";
+
+import {
   getFirestore,
   doc,
   setDoc,
@@ -46,6 +51,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
+const functions = getFunctions(app, "us-central1");
 
 
 /* =========================================================
@@ -72,9 +78,10 @@ let networkBoxes = [];
 let unsubClients = null;
 let unsubPayments = null;
 let unsubNetworkBoxes = null;
-let unsubConnectorPairing = null;
-let unsubConnectorDevice = null;
-let activeConnectorPairingCode = "";
+let unsubConnectors = null;
+let unsubMikrotikSnapshot = null;
+let activeConnectorId = "";
+let activeMikrotikSnapshot = null;
 
 let networkMap = null;
 let networkSatelliteLayer = null;
@@ -1053,122 +1060,6 @@ function renderProfile() {
 
 
 /* =========================================================
-   INTEGRACIÓN CAHESA CONNECTOR / MIKROTIK
-========================================================= */
-
-function connectorNowIso() {
-  return new Date().toISOString();
-}
-
-function connectorRandomCode() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let raw = "";
-  for (let i = 0; i < 10; i++) raw += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return `CAH-${raw.slice(0, 5)}-${raw.slice(5)}`;
-}
-
-function connectorSetBadge(label, state = "offline") {
-  const badge = $("#connectorStatusBadge");
-  if (!badge) return;
-  badge.className = `connector-status-badge ${state}`;
-  badge.textContent = label;
-}
-
-function renderConnectorDevice(data = null) {
-  $("#connectorDeviceName").textContent = data?.connectorName || "—";
-  $("#connectorMikrotik").textContent = data?.mikrotikIdentity || "—";
-  $("#connectorPppSecrets").textContent = Number.isFinite(Number(data?.pppSecrets)) ? data.pppSecrets : "—";
-  $("#connectorPppActive").textContent = Number.isFinite(Number(data?.pppActive)) ? data.pppActive : "—";
-  $("#connectorPppDisabled").textContent = Number.isFinite(Number(data?.pppDisabled)) ? data.pppDisabled : "—";
-
-  const info = $("#connectorInfo");
-  if (!info) return;
-  if (!data) {
-    info.textContent = "Todavía no hay un Connector vinculado.";
-    connectorSetBadge("Sin conectar", "offline");
-    return;
-  }
-
-  const last = data.lastSeenAt ? new Date(data.lastSeenAt).getTime() : 0;
-  const online = last > 0 && (Date.now() - last) < 90000 && data.status === "online";
-  connectorSetBadge(online ? "Conectado" : "Sin comunicación", online ? "online" : "offline");
-  info.innerHTML = `Última comunicación: <strong>${last ? new Date(last).toLocaleString("es-MX") : "desconocida"}</strong>${data.routerOsVersion ? ` · RouterOS ${escapeHtml(data.routerOsVersion)}` : ""}${data.host ? ` · ${escapeHtml(data.host)}:${escapeHtml(data.port || "8728")}` : ""}`;
-}
-
-function stopConnectorWatchers() {
-  if (unsubConnectorPairing) unsubConnectorPairing();
-  if (unsubConnectorDevice) unsubConnectorDevice();
-  unsubConnectorPairing = null;
-  unsubConnectorDevice = null;
-  activeConnectorPairingCode = "";
-}
-
-function watchConnectorPairing(code) {
-  if (!currentUser || !code) return;
-  if (unsubConnectorPairing) unsubConnectorPairing();
-  if (unsubConnectorDevice) unsubConnectorDevice();
-
-  const pairingRef = doc(db, "connectorPairings", code);
-  unsubConnectorPairing = onSnapshot(pairingRef, snap => {
-    if (!snap.exists()) {
-      connectorSetBadge("Sin conectar", "offline");
-      return;
-    }
-    const data = snap.data();
-    if (data.status === "claimed" && data.connectorUid) {
-      connectorSetBadge("Vinculando…", "waiting");
-      $("#connectorPairingCodeWrap")?.classList.add("hidden");
-      const deviceRef = doc(db, "users", currentUser.uid, "connectorDevices", data.connectorUid);
-      if (unsubConnectorDevice) unsubConnectorDevice();
-      unsubConnectorDevice = onSnapshot(deviceRef, deviceSnap => {
-        renderConnectorDevice(deviceSnap.exists() ? deviceSnap.data() : null);
-      }, err => {
-        console.error("CONNECTOR DEVICE SNAPSHOT:", err);
-        renderConnectorDevice(null);
-      });
-    } else {
-      connectorSetBadge("Esperando Connector", "waiting");
-    }
-  }, err => {
-    console.error("CONNECTOR PAIRING SNAPSHOT:", err);
-    toast("No se pudo vigilar el código de vinculación.", "error");
-  });
-}
-
-async function createConnectorPairing() {
-  if (!isCahesaAuthenticatedUser()) {
-    toast("Debes iniciar sesión para vincular un Connector.", "error");
-    return;
-  }
-  const btn = $("#createConnectorPairingBtn");
-  if (btn) btn.disabled = true;
-  try {
-    stopConnectorWatchers();
-    const code = connectorRandomCode();
-    await setDoc(doc(db, "connectorPairings", code), {
-      ownerUid: currentUser.uid,
-      connectorUid: "",
-      status: "waiting",
-      createdAt: connectorNowIso(),
-      updatedAt: connectorNowIso()
-    });
-    activeConnectorPairingCode = code;
-    $("#connectorPairingCode").textContent = code;
-    $("#connectorPairingCodeWrap")?.classList.remove("hidden");
-    connectorSetBadge("Esperando Connector", "waiting");
-    watchConnectorPairing(code);
-    toast("Código de vinculación generado.");
-  } catch (err) {
-    console.error("ERROR CREANDO PAIRING:", err);
-    toast(friendlyError(err), "error");
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
-
-$("#createConnectorPairingBtn")?.addEventListener("click", createConnectorPairing);
-
-/* =========================================================
    ESTADO DE AUTENTICACIÓN
 ========================================================= */
 
@@ -1188,11 +1079,14 @@ onAuthStateChanged(
 
       if (unsubNetworkBoxes)
         unsubNetworkBoxes();
+      if (unsubConnectors)
+        unsubConnectors();
+      if (unsubMikrotikSnapshot)
+        unsubMikrotikSnapshot();
 
-      stopConnectorWatchers();
-      renderConnectorDevice(null);
-      $("#connectorPairingCodeWrap")?.classList.add("hidden");
       networkBoxes = [];
+      activeConnectorId = "";
+      activeMikrotikSnapshot = null;
       setAppVisible(false);
 
       return;
@@ -1228,8 +1122,6 @@ onAuthStateChanged(
           };
 
       renderProfile();
-      renderConnectorDevice(null);
-      $("#connectorPairingCodeWrap")?.classList.add("hidden");
 
       // Intentamos crear/sincronizar el documento del perfil sin impedir
       // que el resto de la aplicación arranque si las reglas aún no fueron
@@ -1285,6 +1177,10 @@ function subscribeData() {
 
   if (unsubNetworkBoxes)
     unsubNetworkBoxes();
+  if (unsubConnectors)
+    unsubConnectors();
+  if (unsubMikrotikSnapshot)
+    unsubMikrotikSnapshot();
 
 
   /* ---------- CLIENTES ---------- */
@@ -1393,7 +1289,93 @@ function subscribeData() {
     err => { console.error("ERROR CAJAS DE RED:", err); toast(friendlyError(err), "error"); }
   );
 
+  subscribeConnectors();
   }
+
+
+
+/* =========================================================
+   MIKROTIK / CONECTOR — SOLO LECTURA
+========================================================= */
+
+function formatConnectorDate(value) {
+  if (!value) return "—";
+  const date = value?.toDate ? value.toDate() : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("es-MX", { dateStyle: "short", timeStyle: "short" }).format(date);
+}
+
+function escapeTable(value) {
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+}
+
+function renderMikrotikPanel() {
+  const connectorBadge = $("#connectorStatusBadge");
+  const overall = $("#mikrotikOverallStatus");
+  const meta = $("#connectorMeta");
+  const stats = $("#mikrotikStats");
+  const table = $("#mikrotikClientsTable");
+  if (!connectorBadge || !overall || !meta || !stats || !table) return;
+  const connected = Boolean(activeConnectorId);
+  const snapshot = activeMikrotikSnapshot || {};
+  const connector = snapshot.__connector || {};
+  const lastSeen = connector.lastSeenAt?.toDate ? connector.lastSeenAt.toDate() : (connector.lastSeenAt ? new Date(connector.lastSeenAt) : null);
+  const stale = Boolean(lastSeen && (Date.now() - lastSeen.getTime()) > 120000);
+  const state = connected && !stale ? "online" : connected ? "stale" : "pending";
+  connectorBadge.className = `connector-status ${state}`;
+  connectorBadge.textContent = connected ? (stale ? "Sin reporte reciente" : "Conectado") : "No vinculado";
+  overall.className = `connector-status ${state}`;
+  overall.textContent = connected ? (stale ? "Conector sin reporte" : "En línea") : "Sin conectar";
+  meta.innerHTML = `<div><span>Conector</span><strong>${escapeTable(connector.name || connector.id || "—")}</strong></div><div><span>Último reporte</span><strong>${escapeTable(formatConnectorDate(connector.lastSeenAt))}</strong></div><div><span>MikroTik</span><strong>${escapeTable(snapshot.identity || "—")}</strong></div>`;
+  const secrets = Number(snapshot.pppSecrets ?? snapshot.clients?.length ?? 0);
+  const enabled = Number(snapshot.enabled ?? 0);
+  const disabled = Number(snapshot.disabled ?? 0);
+  const active = Number(snapshot.active ?? 0);
+  stats.innerHTML = `<div><strong>${secrets}</strong><span>PPP Secrets</span></div><div><strong>${enabled}</strong><span>Habilitados</span></div><div><strong>${disabled}</strong><span>Suspendidos</span></div><div><strong>${active}</strong><span>Activos</span></div>`;
+  const search = String($("#mikrotikClientSearch")?.value || "").trim().toLowerCase();
+  const rows = Array.isArray(snapshot.clients) ? snapshot.clients.filter(c => !search || [c.name,c.secret,c.profile,c.comment,c.address,c.status].some(v => String(v ?? "").toLowerCase().includes(search))) : [];
+  if (!rows.length) { table.innerHTML = `<div class="empty-state">${connected ? "No hay clientes que coincidan con la búsqueda." : "Vincula un conector para consultar los clientes reales."}</div>`; return; }
+  table.innerHTML = `<table class="mikrotik-table"><thead><tr><th>PPPoE / Secret</th><th>Cliente</th><th>Perfil</th><th>Estado</th><th>IP</th></tr></thead><tbody>${rows.map(c => `<tr><td><strong>${escapeTable(c.secret || c.name || "—")}</strong></td><td>${escapeTable(c.comment || c.name || "—")}</td><td>${escapeTable(c.profile || "—")}</td><td><span class="mikrotik-state ${String(c.status).toLowerCase() === "online" ? "online" : String(c.status).toLowerCase() === "disabled" ? "disabled" : "offline"}">${escapeTable(c.status || "OFFLINE")}</span></td><td>${escapeTable(c.address || c.remoteAddress || "—")}</td></tr>`).join("")}</tbody></table>`;
+}
+
+function subscribeConnectors() {
+  if (!currentUser) return;
+  const connectorsRef = collection(db, "users", currentUser.uid, "connectors");
+  unsubConnectors = onSnapshot(connectorsRef, snapshot => {
+    if (unsubMikrotikSnapshot) unsubMikrotikSnapshot();
+    activeConnectorId = ""; activeMikrotikSnapshot = null;
+    const first = snapshot.docs[0];
+    if (!first) { renderMikrotikPanel(); return; }
+    activeConnectorId = first.id;
+    const connectorData = { id: first.id, ...first.data() };
+    const snapRef = doc(db, "users", currentUser.uid, "connectors", first.id, "snapshots", "latest");
+    unsubMikrotikSnapshot = onSnapshot(snapRef, snap => {
+      activeMikrotikSnapshot = snap.exists() ? { ...snap.data(), __connector: connectorData } : { __connector: connectorData };
+      renderMikrotikPanel();
+    }, err => { console.error("ERROR SNAPSHOT MIKROTIK:", err); activeMikrotikSnapshot = { __connector: connectorData }; renderMikrotikPanel(); });
+  }, err => { console.error("ERROR CONECTORES:", err); renderMikrotikPanel(); });
+}
+
+async function createConnectorPairing() {
+  if (!currentUser || !isCahesaAuthenticatedUser()) return;
+  const button = $("#createConnectorPairingBtn");
+  try {
+    button.disabled = true; button.textContent = "Generando…";
+    const callable = httpsCallable(functions, "createConnectorPairing");
+    const result = await callable({});
+    const code = result.data?.code;
+    if (!code) throw new Error("El servidor no devolvió un código de vinculación.");
+    $("#pairingCodeValue").textContent = code;
+    $("#pairingCodeBox").classList.remove("hidden");
+    toast("Código de vinculación generado. Caduca en 10 minutos y solo puede utilizarse una vez.");
+  } catch (err) { console.error("ERROR GENERANDO VINCULACIÓN:", err); toast(friendlyError(err), "error"); }
+  finally { button.disabled = false; button.textContent = "Generar código de vinculación"; }
+}
+
+$("#createConnectorPairingBtn")?.addEventListener("click", createConnectorPairing);
+$("#refreshMikrotikBtn")?.addEventListener("click", renderMikrotikPanel);
+$("#mikrotikClientSearch")?.addEventListener("input", renderMikrotikPanel);
+
 
   
 /* =========================================================
@@ -3052,6 +3034,8 @@ function goSection(name) {
     clients: "Clientes",
 
     network: "Mapa de red",
+
+    mikrotik: "MikroTik",
 
     payments: "Pagos",
 
