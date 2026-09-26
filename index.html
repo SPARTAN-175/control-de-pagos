@@ -915,6 +915,22 @@
           Todavía no tienes clientes.
         </div>
 
+
+        <div class="section-card payment-calendar-card">
+
+          <div class="section-head">
+            <div>
+              <h3>Calendario de mensualidades</h3>
+              <p class="muted">Verde = pagado · rojo = mensualidad atrasada.</p>
+            </div>
+          </div>
+
+          <div id="paymentCalendar">
+            <div class="empty-state">Agrega clientes para ver su calendario mensual.</div>
+          </div>
+
+        </div>
+
       </section>
 
 
@@ -1627,7 +1643,7 @@
 
         <label>
 
-          Fecha de pago*
+          Próximo vencimiento*
 
           <input
             id="clientDueDate"
@@ -1838,6 +1854,12 @@
 
 
       </div>
+
+
+      <div
+        id="paymentOverdueBox"
+        class="payment-overdue-box hidden"
+      ></div>
 
 
       <div class="dialog-actions">
