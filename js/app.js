@@ -140,9 +140,10 @@ const timestampDate = (value) => {
 
 
 function effectiveDueDate(client) {
-  if (client?.dueDate) return client.dueDate;
+  // Regla de negocio: después de un pago, el siguiente vencimiento
+  // siempre es la misma fecha del mes siguiente.
   if (client?.lastPaymentDate) return addMonths(client.lastPaymentDate, 1);
-  return "";
+  return client?.dueDate || "";
 }
 
 
@@ -1836,8 +1837,11 @@ function openClientDialog(c = null) {
     c?.amount ?? 100;
 
 
-  $("#clientDueDate").value =
-    c ? (effectiveDueDate(c) || c.dueDate || isoDate()) : isoDate();
+  const nextDue = c
+    ? (effectiveDueDate(c) || isoDate())
+    : addMonths(isoDate(), 1);
+  $("#clientDueDate").value = nextDue;
+  $("#clientDueDate").readOnly = Boolean(c?.lastPaymentDate);
 
 
   $("#clientStatus").value =
@@ -2368,8 +2372,12 @@ function renderPaymentCalendar() {
 
   const active = clients.filter(c => c.active !== false);
   const now = new Date();
-  const year = now.getFullYear();
-  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
+  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  // Ventana móvil de 12 meses: 5 meses anteriores + mes actual + 6 siguientes.
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(currentMonthStart.getFullYear(), currentMonthStart.getMonth() - 5 + i, 1);
+    return monthKey(d);
+  });
 
   if (!active.length) {
     host.innerHTML = `<div class="empty-state">Agrega clientes para ver su calendario mensual.</div>`;
@@ -2382,7 +2390,7 @@ function renderPaymentCalendar() {
         <thead>
           <tr>
             <th>Cliente</th>
-            ${months.map(m => `<th>${escapeHtml(monthLabel(m, true).replace(/\s*de\s*${year}/i, ""))}</th>`).join("")}
+            ${months.map(m => `<th>${escapeHtml(monthLabel(m, true).replace(/\s+de\s+\d{4}/i, ""))}</th>`).join("")}
           </tr>
         </thead>
         <tbody>
@@ -2404,7 +2412,8 @@ function renderPaymentCalendar() {
                 if (!beforeClient && paid.has(m)) { state = "paid"; label = "✓"; }
                 else if (!beforeClient && !isFuture && deadline < isoDate()) { state = "overdue"; label = "!"; }
                 else if (!beforeClient && m === monthKey(now)) { state = "pending"; label = "•"; }
-                return `<td><span class="payment-month-cell ${state}" title="${escapeHtml(monthLabel(m))}">${label}</span></td>`;
+                const currentClass = m === monthKey(now) ? " current-month" : "";
+                return `<td><span class="payment-month-cell ${state}${currentClass}" title="${escapeHtml(monthLabel(m))}">${label}</span></td>`;
               }).join("")}
             </tr>`;
           }).join("")}
