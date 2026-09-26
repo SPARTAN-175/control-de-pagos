@@ -109,69 +109,8 @@
 .payment-calendar thead th{white-space:nowrap}
 @media(max-width:600px){.payment-calendar-scroll{max-width:100%;overflow-x:auto}.payment-calendar-client{position:sticky;left:0}.field-hint{font-size:10.5px}}
 
+
 /* =========================================================
-   CAHESA V4 - SEGUIMIENTO, CLIENTES Y RECIBOS
+   MAPA DE RED · KML + LOCALIDADES + BUSCADOR
 ========================================================= */
-.tracking-toolbar{display:grid;grid-template-columns:130px minmax(220px,1fr) 180px;gap:12px;align-items:end;margin-bottom:18px}
-.tracking-toolbar label{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:750;color:#475569}
-.tracking-toolbar input,.tracking-toolbar select{border:1px solid #d8dee9;border-radius:11px;padding:11px 12px;background:#fff}
-.payment-calendar-desktop{overflow:hidden;border:1px solid #e7ebf2;border-radius:14px}
-.payment-calendar{min-width:0!important;width:100%;table-layout:fixed}
-.payment-calendar th:first-child{width:190px}
-.payment-calendar th,.payment-calendar td{padding:8px 5px}
-.calendar-client-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.payment-calendar-client small{display:block;font-size:10px;color:#94a3b8;margin-top:2px}
-.payment-calendar-mobile{display:none}
-.client-code-line{font-size:11px!important;color:#94a3b8!important;margin:-7px 0 10px!important}
-.card-actions{flex-wrap:wrap}
-.card-actions .small{padding:6px 9px;font-size:11px}
-.card-actions .primary{padding:7px 10px;font-size:12px}
-.client-dialog-card{width:min(980px,calc(100% - 24px));border:none!important}
-.client-dialog-card .form-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:0 18px}
-.client-dialog-card .network-equipment-box{grid-column:1/-1}
-.ticket-settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
-.ticket-settings-grid label{display:flex;flex-direction:column;gap:7px;font-size:13px;font-weight:650;margin-bottom:14px}
-.ticket-settings-grid input{border:1px solid #d8dee9;border-radius:11px;padding:11px 12px;background:#fff}
-.ticket-check{flex-direction:row!important;align-items:center;gap:8px!important}
-.ticket-check input{width:auto}
-.ticket-settings-actions{display:flex;gap:10px;flex-wrap:wrap;border-top:1px solid #edf0f4;padding-top:14px}
-.ticket-dialog-card{width:min(620px,calc(100% - 24px))}
-.ticket-preview{display:flex;justify-content:center;background:#f8fafc;border:1px solid #e7ebf2;border-radius:14px;padding:16px}
-.print-ticket{width:100%;max-width:420px;background:#fff;border:1px dashed #aab3c2;padding:20px;font-family:Arial,sans-serif;color:#111}
-.ticket-header{display:flex;align-items:center;gap:12px;border-bottom:2px solid #111;padding-bottom:10px}
-.ticket-logo{width:62px;height:62px;object-fit:contain}
-.ticket-header h3{margin:0;font-size:20px}.ticket-header p{margin:3px 0 0;font-size:12px;color:#64748b}
-.ticket-title{text-align:center;font-weight:900;font-size:16px;margin:15px 0 3px}
-.ticket-folio{text-align:center;font-size:10px;color:#64748b;margin-bottom:12px}
-.ticket-info>div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #edf0f4;padding:7px 0;font-size:12px}
-.ticket-info span{color:#64748b}.ticket-info strong{text-align:right}
-.ticket-info .ticket-total{font-size:16px;border-bottom:2px solid #111}.ticket-note{font-size:11px;color:#475569}
-.print-ticket footer{text-align:center;font-size:10px;color:#64748b;margin-top:18px}
-.client-history-dialog-card{width:min(800px,calc(100% - 24px))}
-.client-history-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
-.client-history-summary>div{background:#f8fafc;border-radius:11px;padding:10px}
-.client-history-summary span{display:block;font-size:10px;color:#64748b}.client-history-summary strong{display:block;margin-top:3px;font-size:14px}
-.client-history-payments{display:flex;flex-direction:column}
-.client-history-payment-row{display:flex;justify-content:space-between;gap:15px;padding:12px 0;border-bottom:1px solid #edf0f4}
-.client-history-payment-row span,.client-history-payment-row small{display:block;color:#64748b;font-size:11px;margin-top:3px}
-.client-history-payment-actions{display:flex;align-items:center;gap:10px}
-@media(max-width:850px){
-  .tracking-toolbar{grid-template-columns:1fr}
-  .payment-calendar-desktop{display:none}
-  .payment-calendar-mobile{display:grid;grid-template-columns:1fr;gap:10px}
-  .mobile-calendar-month{border:1px solid #e7ebf2;border-radius:13px;background:#fff;padding:12px}
-  .mobile-calendar-month h3{margin:0 0 8px;font-size:15px;text-transform:capitalize}
-  .mobile-calendar-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid #edf0f4}
-  .mobile-calendar-row strong,.mobile-calendar-row small{display:block}.mobile-calendar-row small{font-size:10px;color:#94a3b8;margin-top:2px}
-  .ticket-settings-grid{grid-template-columns:1fr}
-  .client-history-summary{grid-template-columns:1fr 1fr}
-  .client-history-payment-row{align-items:flex-start;flex-direction:column}
-  .client-history-payment-actions{width:100%;justify-content:space-between}
-}
-@media(max-width:600px){
-  .client-dialog-card .form-grid{grid-template-columns:1fr}
-  .client-dialog-card{width:calc(100vw - 16px)}
-  .ticket-dialog-card{width:calc(100vw - 16px)}
-  .ticket-actions{position:static}
-  .client-history-dialog-card{width:calc(100vw - 16px)}
-}
+.network-filters{display:grid;grid-template-columns:1fr 1.25fr;gap:9px;margin:12px 0 8px}.network-filter-field{display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:750;color:#475569}.network-filter-field input,.network-filter-field select{width:100%;border:1px solid #d8dee9;border-radius:10px;padding:10px 11px;background:#fff;outline:none}.network-filter-field input:focus,.network-filter-field select:focus{border-color:#475569;box-shadow:0 0 0 3px rgba(71,85,105,.1)}.network-locality-actions{display:flex;justify-content:flex-end;margin-bottom:8px}.small-text{font-size:11px}.network-locality-manager{display:flex;flex-direction:column;gap:12px}.network-locality-add{display:grid;grid-template-columns:1fr auto;gap:8px}.network-locality-add input{border:1px solid #d8dee9;border-radius:10px;padding:11px 12px}.network-locality-import-actions{display:flex;gap:8px;flex-wrap:wrap}.network-localities-list{display:flex;flex-direction:column;gap:7px;max-height:320px;overflow:auto;padding:2px}.network-locality-item{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #e7ebf2;border-radius:10px;padding:9px 10px;background:#f8fafc}.network-locality-item span{font-weight:700}.network-mini-popup{display:flex;flex-direction:column;gap:3px;min-width:170px;font-size:11px}.network-mini-popup strong{font-size:14px;color:#172033;margin-bottom:2px}.network-mini-popup span{color:#64748b}.network-box-item{min-width:0}.network-box-item .grow{min-width:0}.network-box-item .grow strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.network-box-item .grow span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}@media(max-width:600px){.network-filters{grid-template-columns:1fr}.network-locality-add{grid-template-columns:1fr}.network-locality-add button,.network-locality-import-actions button{width:100%}.network-locality-import-actions{display:grid;grid-template-columns:1fr}.network-locality-actions{justify-content:stretch}.network-locality-actions button{width:100%}}
