@@ -34,7 +34,11 @@ function cors(res) {
   res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
 }
 
-exports.createConnectorPairing = onCall(async (request) => {
+exports.createConnectorPairing = onCall(
+  {
+    cors: ["https://spartan-175.github.io"]
+  },
+  async (request) => {
   const uid = requireRealUser(request);
   const code = randomCode();
   const codeHash = hash(code);
@@ -52,7 +56,8 @@ exports.createConnectorPairing = onCall(async (request) => {
     code,
     expiresAt: expiresAt.toDate().toISOString()
   };
-});
+  }
+);
 
 exports.pairConnector = onRequest(async (req, res) => {
   cors(res);
