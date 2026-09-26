@@ -112,6 +112,48 @@ const monthKey = (d = new Date()) =>
   ).padStart(2, "0")}`;
 
 
+const dateFromIso = (value) => {
+  if (!value) return null;
+  const [y, m, d] = String(value).slice(0, 10).split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+};
+
+
+const addMonths = (value, count = 1) => {
+  const source = value instanceof Date ? value : dateFromIso(value);
+  if (!source || Number.isNaN(source.getTime())) return "";
+  const day = source.getDate();
+  const result = new Date(source.getFullYear(), source.getMonth() + count, 1);
+  const lastDay = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
+  result.setDate(Math.min(day, lastDay));
+  return isoDate(result);
+};
+
+
+const timestampDate = (value) => {
+  if (!value) return null;
+  if (typeof value.toDate === "function") return value.toDate();
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+
+function effectiveDueDate(client) {
+  if (client?.dueDate) return client.dueDate;
+  if (client?.lastPaymentDate) return addMonths(client.lastPaymentDate, 1);
+  return "";
+}
+
+
+function paymentMonthsForCalendar(payment) {
+  if (Array.isArray(payment?.coveredMonths) && payment.coveredMonths.length) {
+    return payment.coveredMonths;
+  }
+  return payment?.month ? [payment.month] : [];
+}
+
+
 const escapeHtml = (s = "") =>
   String(s).replace(
     /[&<>"']/g,
@@ -1235,17 +1277,14 @@ function subscribeData() {
 
 function clientStatus(c) {
 
+  if (getClientOverdueMonths(c).length)
+    return "overdue";
+
+
   if (
     c.currentPaymentStatus === "paid"
   )
     return "paid";
-
-
-  if (
-    c.dueDate &&
-    c.dueDate < isoDate()
-  )
-    return "overdue";
 
 
   return "pending";
@@ -1274,6 +1313,7 @@ function renderAll() {
   renderClients();
   renderPayments();
   renderHistory();
+  renderPaymentCalendar();
   renderNetwork();
 
 }
@@ -1420,7 +1460,7 @@ function clientRowHtml(c) {
           ${money(c.amount)}
           · vence
           ${escapeHtml(
-            c.dueDate || "—"
+            effectiveDueDate(c) || "—"
           )}
         </span>
 
@@ -1536,7 +1576,7 @@ function renderClients() {
               <span>
                 📅
                 ${escapeHtml(
-                  c.dueDate || "—"
+                  effectiveDueDate(c) || "—"
                 )}
               </span>
 
@@ -1797,7 +1837,7 @@ function openClientDialog(c = null) {
 
 
   $("#clientDueDate").value =
-    c?.dueDate || isoDate();
+    c ? (effectiveDueDate(c) || c.dueDate || isoDate()) : isoDate();
 
 
   $("#clientStatus").value =
@@ -2223,6 +2263,165 @@ async function deleteClient(clientId) {
 }
 
 /* =========================================================
+   MENSUALIDADES / CALENDARIO
+========================================================= */
+
+function monthLabel(key, short = false) {
+  const [y, m] = String(key).split("-").map(Number);
+  if (!y || !m) return key || "";
+  return new Intl.DateTimeFormat("es-MX", {
+    month: short ? "short" : "long",
+    year: "numeric"
+  }).format(new Date(y, m - 1, 1));
+}
+
+
+function monthDayDueDate(month, day) {
+  const [y, m] = String(month).split("-").map(Number);
+  if (!y || !m) return "";
+  const lastDay = new Date(y, m, 0).getDate();
+  const d = new Date(y, m - 1, Math.min(Number(day) || 1, lastDay));
+  return isoDate(d);
+}
+
+
+function getClientPaymentMonths(clientId) {
+  const result = new Set();
+  payments
+    .filter(p => p.clientId === clientId)
+    .forEach(p => paymentMonthsForCalendar(p).forEach(m => result.add(m)));
+  return result;
+}
+
+
+function getClientOverdueMonths(client) {
+  const due = effectiveDueDate(client);
+  const todayIso = isoDate();
+  const today = dateFromIso(todayIso);
+  if (!due || !today) return [];
+
+  const dueDate = dateFromIso(due);
+  if (!dueDate) return [];
+
+  const paid = getClientPaymentMonths(client.id);
+  const created = timestampDate(client.createdAt);
+  const paymentDates = payments
+    .filter(p => p.clientId === client.id && p.paidDate)
+    .map(p => dateFromIso(p.paidDate))
+    .filter(Boolean);
+
+  let start = new Date(dueDate.getFullYear(), dueDate.getMonth(), 1);
+  const knownDates = [created, ...paymentDates].filter(Boolean);
+  if (knownDates.length) {
+    const earliest = new Date(Math.min(...knownDates.map(d => d.getTime())));
+    const earliestMonth = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
+    if (earliestMonth < start) start = earliestMonth;
+  }
+
+  const end = new Date(today.getFullYear(), today.getMonth(), 1);
+  const day = dueDate.getDate();
+  const overdue = [];
+
+  for (let cursor = start; cursor <= end; cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)) {
+    const key = monthKey(cursor);
+    if (paid.has(key)) continue;
+    const deadline = monthDayDueDate(key, day);
+    if (deadline < todayIso) overdue.push(key);
+  }
+
+  return overdue;
+}
+
+
+function renderPaymentOverdueOptions(client) {
+  const box = $("#paymentOverdueBox");
+  if (!box) return;
+
+  const overdue = getClientOverdueMonths(client);
+  box.classList.toggle("hidden", overdue.length === 0);
+
+  if (!overdue.length) {
+    box.innerHTML = "";
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="overdue-payment-head">
+      <strong>Mensualidades atrasadas</strong>
+      <span>Marca la(s) que vas a liquidar con este pago.</span>
+    </div>
+    <div class="overdue-payment-options">
+      ${overdue.map(month => `
+        <label class="overdue-payment-option">
+          <input type="checkbox" name="paymentCoveredMonth" value="${escapeHtml(month)}">
+          <span>${escapeHtml(monthLabel(month))}</span>
+        </label>
+      `).join("")}
+    </div>
+  `;
+}
+
+
+function renderPaymentCalendar() {
+  const host = $("#paymentCalendar");
+  if (!host) return;
+
+  const active = clients.filter(c => c.active !== false);
+  const now = new Date();
+  const year = now.getFullYear();
+  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
+
+  if (!active.length) {
+    host.innerHTML = `<div class="empty-state">Agrega clientes para ver su calendario mensual.</div>`;
+    return;
+  }
+
+  host.innerHTML = `
+    <div class="payment-calendar-scroll">
+      <table class="payment-calendar">
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            ${months.map(m => `<th>${escapeHtml(monthLabel(m, true).replace(/\s*de\s*${year}/i, ""))}</th>`).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${active.map(c => {
+            const paid = getClientPaymentMonths(c.id);
+            const created = timestampDate(c.createdAt);
+            const createdMonth = created ? monthKey(created) : "";
+            const due = effectiveDueDate(c);
+            const dueDate = dateFromIso(due);
+            const dueDay = dueDate?.getDate() || 1;
+            return `<tr>
+              <th class="payment-calendar-client">${escapeHtml(c.name)}</th>
+              ${months.map(m => {
+                const deadline = monthDayDueDate(m, dueDay);
+                const isFuture = m > monthKey(now);
+                const beforeClient = createdMonth && m < createdMonth;
+                let state = "future";
+                let label = "—";
+                if (!beforeClient && paid.has(m)) { state = "paid"; label = "✓"; }
+                else if (!beforeClient && !isFuture && deadline < isoDate()) { state = "overdue"; label = "!"; }
+                else if (!beforeClient && m === monthKey(now)) { state = "pending"; label = "•"; }
+                return `<td><span class="payment-month-cell ${state}" title="${escapeHtml(monthLabel(m))}">${label}</span></td>`;
+              }).join("")}
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+    <div class="payment-calendar-legend">
+      <span><i class="paid"></i> Pagado</span>
+      <span><i class="pending"></i> Pendiente</span>
+      <span><i class="overdue"></i> Atrasado</span>
+      <span><i class="future"></i> Futuro</span>
+    </div>
+  `;
+}
+
+
+/* =========================================================
    DIALOGO DE PAGO
 ========================================================= */
 
@@ -2257,6 +2456,7 @@ function openPaymentDialog(id) {
   $("#paymentNote").value =
     "";
 
+  renderPaymentOverdueOptions(c);
 
   $("#paymentDialog").showModal();
 
@@ -2342,8 +2542,27 @@ $("#paymentForm").addEventListener(
       }
 
 
-      const month =
-        paidDate.slice(0, 7);
+      const overdueBox = $("#paymentOverdueBox");
+      const selectedOverdueMonths = overdueBox
+        ? [...overdueBox.querySelectorAll('input[name="paymentCoveredMonth"]:checked')].map(input => input.value)
+        : [];
+      const overdueMonths = getClientOverdueMonths(c);
+      const coveredMonths = selectedOverdueMonths.length
+        ? selectedOverdueMonths
+        : [paidDate.slice(0, 7)];
+
+      if (overdueMonths.length && !selectedOverdueMonths.length) {
+        throw new Error("Selecciona al menos una mensualidad atrasada para liquidar.");
+      }
+
+      const latestCoveredMonth = coveredMonths.slice().sort().at(-1);
+      const billingDay = overdueMonths.length
+        ? (dateFromIso(effectiveDueDate(c))?.getDate() || dateFromIso(paidDate)?.getDate() || 1)
+        : (dateFromIso(paidDate)?.getDate() || 1);
+      const latestCoveredDate = latestCoveredMonth
+        ? monthDayDueDate(latestCoveredMonth, billingDay)
+        : paidDate;
+      const nextDueDate = addMonths(latestCoveredDate, 1);
 
 
       await addDoc(
@@ -2363,7 +2582,9 @@ $("#paymentForm").addEventListener(
 
           paidDate,
 
-          month,
+          month: paidDate.slice(0, 7),
+
+          coveredMonths,
 
           method:
             $("#paymentMethod")
@@ -2403,6 +2624,9 @@ $("#paymentForm").addEventListener(
           lastPaymentAmount:
             amount,
 
+          dueDate:
+            nextDueDate,
+
           updatedAt:
             serverTimestamp()
 
@@ -2440,6 +2664,15 @@ $("#paymentForm").addEventListener(
 
   }
 );
+
+
+$("#paymentOverdueBox")?.addEventListener("change", () => {
+  const id = $("#paymentClientId")?.value;
+  const c = clients.find(x => x.id === id);
+  if (!c) return;
+  const selected = document.querySelectorAll('#paymentOverdueBox input[name="paymentCoveredMonth"]:checked').length;
+  if (selected) $("#paymentAmount").value = (Number(c.amount || 0) * selected).toFixed(2);
+});
 
 
 /* =========================================================
