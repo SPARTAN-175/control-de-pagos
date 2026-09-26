@@ -437,15 +437,6 @@
 
         </button>
 
-        <button
-          class="nav-item"
-          data-section="tracking"
-          type="button"
-        >
-          <span>▦</span>
-          Seguimiento
-        </button>
-
 
         <button
           class="nav-item"
@@ -809,6 +800,8 @@
           </div>
           <div class="network-actions">
             <button id="addNetworkBoxBtn" class="primary" type="button">+ Nueva caja</button>
+            <button id="importNetworkKmlBtn" class="ghost" type="button">Importar KML</button>
+            <input id="importNetworkKmlFile" type="file" accept=".kml,.xml,application/vnd.google-earth.kml+xml,text/xml" hidden>
             <button id="networkMapViewBtn" class="ghost active" type="button">Mapa</button>
             <button id="networkConnectionsViewBtn" class="ghost" type="button">Conexiones</button>
             <button id="networkSatelliteBtn" class="ghost" type="button">Satélite</button>
@@ -826,8 +819,21 @@
               <div class="section-head">
                 <div>
                   <h3>Cajas de red</h3>
-                  <p class="muted">Selecciona una caja para ver sus puertos y clientes.</p>
+                  <p class="muted">Filtra por localidad o busca una caja para ubicarla automáticamente.</p>
                 </div>
+              </div>
+              <div class="network-filters">
+                <label class="network-filter-field">Localidad
+                  <select id="networkLocalityFilter">
+                    <option value="">Todas las localidades</option>
+                  </select>
+                </label>
+                <label class="network-filter-field">Buscar caja
+                  <input id="networkBoxSearch" type="search" placeholder="Nombre, código o dirección">
+                </label>
+              </div>
+              <div class="network-locality-actions">
+                <button id="manageNetworkLocalitiesBtn" class="ghost small" type="button">Gestionar localidades</button>
               </div>
               <div id="networkBoxesList" class="network-box-list empty-state">No hay cajas registradas.</div>
             </div>
@@ -849,39 +855,6 @@
         </div>
 
       </section>
-
-      <!-- =================================================
-           SEGUIMIENTO DE PAGOS
-           ================================================= -->
-
-      <section id="trackingSection" class="page-section hidden">
-        <div class="page-head">
-          <div>
-            <h1>Seguimiento de pagos</h1>
-            <p class="muted">Consulta el avance mensual de tus clientes y detecta atrasos.</p>
-          </div>
-        </div>
-        <div class="section-card payment-calendar-card">
-          <div class="tracking-toolbar">
-            <label class="tracking-year-field">Año
-              <select id="paymentCalendarYear" aria-label="Año del seguimiento"></select>
-            </label>
-            <label class="tracking-filter-field">Buscar cliente
-              <input id="paymentCalendarSearch" type="search" placeholder="Nombre, código o teléfono…">
-            </label>
-            <label class="tracking-filter-field">Estado
-              <select id="paymentCalendarFilter">
-                <option value="all">Todos</option>
-                <option value="paid">Al corriente</option>
-                <option value="pending">Pendientes</option>
-                <option value="overdue">Con atraso</option>
-              </select>
-            </label>
-          </div>
-          <div id="paymentCalendar"><div class="empty-state">Agrega clientes para ver su seguimiento mensual.</div></div>
-        </div>
-      </section>
-
 
       <!-- =================================================
            CLIENTES
@@ -955,7 +928,25 @@
           class="clients-grid empty-state"
         >
           Todavía no tienes clientes.
-        </div></section>
+        </div>
+
+
+        <div class="section-card payment-calendar-card">
+
+          <div class="section-head">
+            <div>
+              <h3>Calendario de mensualidades</h3>
+              <p class="muted">Verde = pagado · rojo = mensualidad atrasada.</p>
+            </div>
+          </div>
+
+          <div id="paymentCalendar">
+            <div class="empty-state">Agrega clientes para ver su calendario mensual.</div>
+          </div>
+
+        </div>
+
+      </section>
 
 
 
@@ -1106,7 +1097,7 @@
             <h1>Datos e imágenes</h1>
 
             <p class="muted">
-              Importa clientes desde archivos básicos o desde la plantilla completa de CAHESA y exporta toda tu información en un formato preparado para Excel.
+              Importa y exporta clientes en formato compatible con Excel y sube fotografías directamente a Firebase Storage.
             </p>
 
           </div>
@@ -1147,7 +1138,7 @@
             </div>
 
             <small class="muted">
-              La importación reconoce automáticamente la plantilla completa de CAHESA y el formato básico de tu proveedor (incluido NOMBRE, SECRETS, NAP, VLAN, MAC, SERVICIO, PAGO, DÍA DE PAGO y TELÉFONO).
+              Columnas admitidas: ID, Nombre, Teléfono, Referencia, Dirección, Servicio, Mensualidad, Fecha de pago, Estado, Notas, Foto.
             </small>
 
           </article>
@@ -1173,7 +1164,66 @@
           </article>
 
 
-          
+          <article class="section-card data-tool data-tool-wide">
+
+            <div class="tool-icon">◉</div>
+
+            <div>
+              <h3>Cargador masivo de imágenes</h3>
+              <p class="muted">
+                Selecciona varias fotografías o una carpeta completa. Se subirán a Firebase Storage. Si el nombre del archivo coincide con el ID o nombre del cliente, se asociará automáticamente; si no coincide, se guardará como recurso de tu cuenta.
+              </p>
+            </div>
+
+            <div class="image-upload-box">
+
+              <label class="file-button primary">
+                Seleccionar imágenes
+                <input
+                  id="bulkImagesFile"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                >
+              </label>
+
+              <label class="file-button ghost">
+                Seleccionar carpeta
+                <input
+                  id="bulkImagesFolder"
+                  type="file"
+                  accept="image/*"
+                  webkitdirectory
+                  directory
+                  multiple
+                >
+              </label>
+
+              <button id="uploadBulkImagesBtn" class="ghost" type="button">
+                Subir a Firebase
+              </button>
+
+            </div>
+
+            <div id="bulkImageProgress" class="upload-progress hidden">
+              <div class="progress-track">
+                <div id="bulkImageProgressBar" class="progress-bar"></div>
+              </div>
+              <span id="bulkImageProgressText">0 / 0</span>
+            </div>
+
+            <div
+              id="bulkImageList"
+              class="bulk-image-list empty-state"
+            >
+              Aún no has seleccionado imágenes.
+            </div>
+
+            <small class="muted">
+              Las fotos de clientes se guardan en <code>users/TU_USUARIO/clients/ID/profile</code>; las demás quedan en <code>users/TU_USUARIO/assets</code>.
+            </small>
+
+          </article>
 
 
           <article class="section-card data-tool data-tool-wide">
@@ -1181,17 +1231,17 @@
             <div class="tool-icon">✓</div>
 
             <div>
-              <h3>Plantilla y compatibilidad</h3>
+              <h3>Formato de importación</h3>
               <p class="muted">
-                La plantilla descargada es el formato maestro de CAHESA. Una vez que un proveedor empiece a trabajar con ella, las siguientes importaciones podrán conservar sus códigos, datos técnicos y datos de cobranza.
+                Para trabajar sin errores, usa la plantilla que genera el botón de exportación. En la columna <strong>Foto</strong> puedes poner el nombre del archivo que subirás con el cargador masivo.
               </p>
             </div>
 
             <div class="import-rules">
               <span>• No borra clientes existentes.</span>
-              <span>• Usa el Código CAHESA para identificar y actualizar.</span>
-              <span>• También acepta el formato básico del proveedor.</span>
-              <span>• Conserva los datos técnicos que ya existan.</span>
+              <span>• Si viene un ID válido, actualiza ese cliente.</span>
+              <span>• Si no hay ID, crea uno nuevo.</span>
+              <span>• Las cantidades se convierten a número automáticamente.</span>
             </div>
 
           </article>
@@ -1310,31 +1360,6 @@
         </div>
 
 
-        <!-- CONFIGURACIÓN DE RECIBOS -->
-        <div class="section-card ticket-settings-card">
-          <div class="section-head">
-            <div>
-              <h3>Recibos de pago</h3>
-              <p class="muted">Configura qué información aparecerá en los tickets que CAHESA genera después de cada pago.</p>
-            </div>
-          </div>
-          <div class="ticket-settings-grid">
-            <label>Nombre del negocio<input id="ticketBusinessName" type="text" placeholder="CAHESA"></label>
-            <label>Subtítulo / servicio<input id="ticketSubtitle" type="text" placeholder="Control de pagos"></label>
-            <label class="full-row">Mensaje final<input id="ticketFooter" type="text" placeholder="Gracias por su pago."></label>
-            <label class="ticket-check"><input id="ticketShowLogo" type="checkbox"> Mostrar logo en el recibo</label>
-            <label class="ticket-check"><input id="ticketShowReference" type="checkbox"> Mostrar referencia y código del cliente</label>
-            <label class="full-row">Logo del recibo
-              <input id="ticketLogoFile" type="file" accept="image/*">
-              <small class="field-hint">JPG, PNG o WEBP. Se guarda de forma privada en tu cuenta.</small>
-            </label>
-          </div>
-          <div class="ticket-settings-actions">
-            <button id="saveTicketSettingsBtn" class="primary" type="button">Guardar configuración</button>
-            <button id="clearTicketLogoBtn" class="ghost" type="button">Quitar logo</button>
-          </div>
-        </div>
-
         <!-- SEGURIDAD -->
 
         <div class="section-card danger-card">
@@ -1368,26 +1393,38 @@
 
 
   <!-- =====================================================
-       MODAL HISTORIAL DEL CLIENTE
+       MODAL LOCALIDADES DEL MAPA DE RED
        ===================================================== -->
-  <dialog id="clientHistoryDialog">
-    <div class="dialog-card client-history-dialog-card">
+
+  <dialog id="networkLocalitiesDialog">
+    <form id="networkLocalitiesForm" class="dialog-card">
       <div class="dialog-head">
         <div>
-          <h2 id="clientHistoryTitle">Historial del cliente</h2>
-          <p id="clientHistoryMeta" class="muted"></p>
+          <h2>Localidades</h2>
+          <p class="muted">Agrega los lugares que utilizarás para organizar tus cajas de red.</p>
         </div>
-        <button type="button" data-close-dialog="clientHistoryDialog" class="icon-btn" aria-label="Cerrar">×</button>
+        <button type="button" data-close-dialog="networkLocalitiesDialog" class="icon-btn" aria-label="Cerrar">×</button>
       </div>
-      <div class="client-history-summary" id="clientHistorySummary"></div>
-      <div class="toolbar client-history-toolbar">
-        <input id="clientHistorySearch" type="search" placeholder="Buscar en recibos o notas…">
-        <input id="clientHistoryMonth" type="month">
-      </div>
-      <div id="clientHistoryPayments" class="client-history-payments empty-state">No hay pagos registrados.</div>
-    </div>
-  </dialog>
 
+      <div class="network-locality-manager">
+        <div class="network-locality-add">
+          <input id="newNetworkLocalityName" type="text" placeholder="Ej. Ostuacán">
+          <button id="addNetworkLocalityBtn" class="primary" type="button">Agregar</button>
+        </div>
+        <div class="network-locality-import-actions">
+          <button id="importNetworkLocalitiesBtn" class="ghost" type="button">Importar Excel / CSV</button>
+          <input id="importNetworkLocalitiesFile" type="file" accept=".xlsx,.xls,.csv,text/csv" hidden>
+          <button id="seedNetworkLocalitiesBtn" class="ghost" type="button">Cargar localidades iniciales</button>
+        </div>
+        <p class="muted small-text">El archivo puede tener una columna llamada <strong>Localidad</strong>, <strong>Nombre</strong> o <strong>NOMBRE</strong>. También puede ser un CSV guardado desde Excel.</p>
+        <div id="networkLocalitiesList" class="network-localities-list"></div>
+      </div>
+
+      <div class="dialog-actions">
+        <button type="button" data-close-dialog="networkLocalitiesDialog" class="ghost">Cerrar</button>
+      </div>
+    </form>
+  </dialog>
 
   <!-- =====================================================
        MODAL NUEVA / EDITAR CAJA DE RED
@@ -1408,6 +1445,7 @@
       <div class="form-grid">
         <label>Nombre*<input id="networkBoxName" type="text" required placeholder="Ej. CTO Centro"></label>
         <label>Código<input id="networkBoxCode" type="text" placeholder="Ej. CTO-001"></label>
+        <label>Localidad<select id="networkBoxLocality"><option value="">Sin localidad</option></select></label>
         <label>Capacidad de puertos*<input id="networkBoxCapacity" type="number" min="1" max="512" step="1" required value="8"></label>
         <label>Estado<select id="networkBoxStatus"><option value="active">Activa</option><option value="maintenance">Mantenimiento</option><option value="inactive">Inactiva</option></select></label>
         <label class="full-row">Dirección / referencia<input id="networkBoxAddress" type="text" placeholder="Referencia para localizarla"></label>
@@ -1439,7 +1477,7 @@
 
     <form
       id="clientForm"
-      class="dialog-card client-dialog-card"
+      class="dialog-card"
     >
 
       <div class="dialog-head">
@@ -1481,11 +1519,6 @@
 
       <div class="form-grid">
 
-
-        <label>
-          Código CAHESA
-          <input id="clientCode" type="text" readonly placeholder="Se asigna automáticamente">
-        </label>
 
         <label>
 
@@ -1618,15 +1651,6 @@
             </label>
             <label>SSID / Wi-Fi
               <input id="clientEquipmentSsid" type="text" placeholder="Nombre de la red Wi-Fi">
-            </label>
-            <label>PPPoE / Secrets
-              <input id="clientPppoeUsername" type="text" placeholder="Usuario PPPoE">
-            </label>
-            <label>VLAN
-              <input id="clientVlan" type="text" placeholder="Ej. 100">
-            </label>
-            <label>Placa
-              <input id="clientPlaca" type="text" placeholder="Dato adicional del proveedor">
             </label>
           </div>
         </div>
@@ -1763,28 +1787,6 @@
 
   </dialog>
 
-
-
-  <!-- =====================================================
-       MODAL RECIBO DE PAGO
-       ===================================================== -->
-  <dialog id="ticketDialog">
-    <div class="dialog-card ticket-dialog-card">
-      <div class="dialog-head">
-        <div>
-          <h2>Recibo de pago</h2>
-          <p class="muted">Pago registrado correctamente.</p>
-        </div>
-        <button type="button" data-close-dialog="ticketDialog" class="icon-btn" aria-label="Cerrar">×</button>
-      </div>
-      <div id="ticketPreview" class="ticket-preview"></div>
-      <div class="dialog-actions ticket-actions">
-        <button id="printTicketBtn" class="primary" type="button">🖨️ Imprimir</button>
-        <button id="shareTicketBtn" class="ghost" type="button">📤 Compartir</button>
-        <button id="downloadTicketBtn" class="ghost" type="button">⬇️ Descargar</button>
-      </div>
-    </div>
-  </dialog>
 
 
   <!-- =====================================================
@@ -1942,6 +1944,7 @@
        ===================================================== -->
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 
   <script
     type="module"
