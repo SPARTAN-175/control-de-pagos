@@ -1360,6 +1360,95 @@ function subscribeConnectors() {
   }, err => { console.error("ERROR CONECTORES:", err); renderMikrotikPanel(); });
 }
 
+async function importMikrotikClientsToClients() {
+  if (!currentUser || !isCahesaAuthenticatedUser()) return;
+
+  const snapshot = activeMikrotikSnapshot || {};
+  const sourceClients = Array.isArray(snapshot.clients) ? snapshot.clients : [];
+  if (!sourceClients.length) {
+    toast("Primero espera a que el Connector reporte los clientes del MikroTik.", "error");
+    return;
+  }
+
+  const button = $("#importMikrotikClientsBtn");
+  try {
+    button.disabled = true;
+    button.textContent = "Pasando…";
+    showLoading(true);
+
+    const existingBySecret = new Map();
+    clients.forEach(client => {
+      const secret = String(client.mikrotikSecret || client.pppoeSecret || client.reference || "").trim();
+      if (secret && !existingBySecret.has(secret)) existingBySecret.set(secret, client);
+    });
+
+    const batch = writeBatch(db);
+    let created = 0;
+    let updated = 0;
+
+    sourceClients.slice(0, 500).forEach(source => {
+      const secret = String(source.secret || source.name || "").trim();
+      if (!secret) return;
+
+      const existing = existingBySecret.get(secret);
+      const technicalData = {
+        mikrotikSecret: secret,
+        pppoeSecret: secret,
+        mikrotikProfile: String(source.profile || "").trim(),
+        mikrotikStatus: String(source.status || "OFFLINE").trim(),
+        mikrotikAddress: String(source.address || source.remoteAddress || "").trim(),
+        mikrotikUpdatedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+
+      if (existing) {
+        batch.set(
+          doc(db, "users", currentUser.uid, "clients", existing.id),
+          technicalData,
+          { merge: true }
+        );
+        updated++;
+        return;
+      }
+
+      const clientRef = doc(collection(db, "users", currentUser.uid, "clients"));
+      const importedName = String(source.comment || source.name || secret).trim() || secret;
+      batch.set(clientRef, {
+        name: importedName,
+        phone: "",
+        reference: secret,
+        address: "",
+        service: "Internet",
+        amount: 0,
+        dueDate: addMonths(isoDate(), 1),
+        currentPaymentStatus: "pending",
+        notes: "Cliente importado desde MikroTik. Completa sus datos comerciales.",
+        photoURL: "",
+        active: true,
+        createdAt: serverTimestamp(),
+        ...technicalData,
+        mikrotikImportedAt: serverTimestamp()
+      });
+      created++;
+    });
+
+    if (!created && !updated) {
+      toast("No hubo clientes nuevos para sincronizar.");
+      return;
+    }
+
+    await batch.commit();
+    toast(`${created} clientes agregados y ${updated} clientes actualizados desde MikroTik.`);
+  } catch (err) {
+    console.error("ERROR IMPORTANDO CLIENTES MIKROTIK:", err);
+    toast(friendlyError(err), "error");
+  } finally {
+    showLoading(false);
+    button.disabled = false;
+    button.textContent = "Pasar a mis clientes";
+  }
+}
+
 async function createConnectorPairing() {
   if (!currentUser || !isCahesaAuthenticatedUser()) return;
   const button = $("#createConnectorPairingBtn");
@@ -1378,6 +1467,7 @@ async function createConnectorPairing() {
 
 $("#createConnectorPairingBtn")?.addEventListener("click", createConnectorPairing);
 $("#refreshMikrotikBtn")?.addEventListener("click", renderMikrotikPanel);
+$("#importMikrotikClientsBtn")?.addEventListener("click", importMikrotikClientsToClients);
 $("#mikrotikClientSearch")?.addEventListener("input", renderMikrotikPanel);
 
 
