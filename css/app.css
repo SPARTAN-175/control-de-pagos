@@ -150,3 +150,40 @@
 .readonly-notice strong{white-space:nowrap}
 .readonly-notice span{color:#64748b;font-size:12px;line-height:1.5}
 @media(max-width:850px){.mikrotik-grid{grid-template-columns:1fr}.connector-meta{grid-template-columns:1fr}.section-head{gap:10px}.compact-search{width:100%}}
+
+/* =========================================================
+   COLOCACION DE NAP EN MAPA - ESTILO GOOGLE EARTH
+========================================================= */
+.network-map-placement-pin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 900;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.network-map-placement-pin.hidden {
+  display: none;
+}
+
+.network-map-placement-marker {
+  font-size: 36px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,.35));
+}
+
+.network-map-placement-label {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, .92);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(0,0,0,.18);
+}
