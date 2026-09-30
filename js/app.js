@@ -43,53 +43,6 @@ import { firebaseConfig } from "../firebase-config.js";
 
 
 /* =========================================================
-   CONFIRMACIÓN CAHESA
-   Reemplaza confirm() nativo por una tarjeta propia.
-========================================================= */
-let pendingCahesaConfirm = null;
-
-function confirmCahesa(message, options = {}) {
-  const dialog = $("#cahesaConfirmDialog");
-  if (!dialog) return Promise.resolve(false);
-
-  const title = options.title || "Confirmar acción";
-  const confirmText = options.confirmText || "Aceptar";
-  const cancelText = options.cancelText || "Cancelar";
-  const danger = options.danger !== false;
-
-  $("#cahesaConfirmTitle").textContent = title;
-  $("#cahesaConfirmMessage").textContent = message;
-  $("#cahesaConfirmAccept").textContent = confirmText;
-  $("#cahesaConfirmCancel").textContent = cancelText;
-  $("#cahesaConfirmAccept").classList.toggle("danger-button", danger);
-  $("#cahesaConfirmAccept").classList.toggle("primary", !danger);
-
-  return new Promise(resolve => {
-    if (pendingCahesaConfirm) pendingCahesaConfirm(false);
-    pendingCahesaConfirm = resolve;
-    dialog.showModal();
-  });
-}
-
-function finishCahesaConfirm(result) {
-  const dialog = $("#cahesaConfirmDialog");
-  const resolve = pendingCahesaConfirm;
-  pendingCahesaConfirm = null;
-  if (dialog?.open) dialog.close();
-  if (resolve) resolve(Boolean(result));
-}
-
-$("#cahesaConfirmAccept")?.addEventListener("click", () => finishCahesaConfirm(true));
-$("#cahesaConfirmCancel")?.addEventListener("click", () => finishCahesaConfirm(false));
-$("#cahesaConfirmDialog")?.addEventListener("cancel", e => {
-  e.preventDefault();
-  finishCahesaConfirm(false);
-});
-$("#cahesaConfirmDialog")?.addEventListener("close", () => {
-  if (pendingCahesaConfirm) finishCahesaConfirm(false);
-});
-
-/* =========================================================
    FIREBASE
 ========================================================= */
 
@@ -2498,10 +2451,7 @@ async function deleteClient(clientId) {
   if (!currentUser || !clientId) return;
   const client = clients.find(c => c.id === clientId);
   if (!client) return;
-  const confirmed = await confirmCahesa(
-    `¿Deseas eliminar a ${client.name || "este cliente"}?\n\nEsta acción eliminará el registro del cliente y no se puede deshacer. Los pagos históricos no se eliminarán automáticamente.`,
-    { title: "Eliminar cliente", confirmText: "Eliminar", danger: true }
-  );
+  const confirmed = confirm(`¿Deseas eliminar a ${client.name || "este cliente"}?\n\nEsta acción eliminará el registro del cliente y no se puede deshacer. Los pagos históricos no se eliminarán automáticamente.`);
   if (!confirmed) return;
 
   try {
@@ -3910,11 +3860,7 @@ async function deactivateSelectedNetworkBox() {
   if (!box) return;
   const nextStatus = box.status === "inactive" ? "active" : "inactive";
   const action = nextStatus === "inactive" ? "dar de baja" : "reactivar";
-  const confirmed = await confirmCahesa(
-    `¿Deseas ${action} la caja «${box.name || "sin nombre"}»?\n\nLos clientes permanecerán registrados y la caja conservará su información.`,
-    { title: nextStatus === "inactive" ? "Dar de baja NAP" : "Reactivar NAP", confirmText: nextStatus === "inactive" ? "Dar de baja" : "Reactivar", danger: nextStatus === "inactive" }
-  );
-  if (!confirmed) return;
+  if (!confirm(`¿Deseas ${action} la caja «${box.name || "sin nombre"}»?\n\nLos clientes permanecerán registrados y la caja conservará su información.`)) return;
   try {
     await updateDoc(doc(db, "users", currentUser.uid, "assets", id), { status: nextStatus, updatedAt: serverTimestamp() });
     toast(nextStatus === "inactive" ? "Caja dada de baja. Sus clientes siguen registrados." : "Caja reactivada.");
@@ -3934,11 +3880,7 @@ async function deleteSelectedNetworkBox() {
     toast("No se puede eliminar una caja que todavía tiene clientes conectados. Puedes darle de baja para conservar su historial.", "error");
     return;
   }
-  const confirmed = await confirmCahesa(
-    `¿Eliminar definitivamente la caja «${box.name || "sin nombre"}»?\n\nEsta acción no se puede deshacer.`,
-    { title: "Eliminar NAP definitivamente", confirmText: "Eliminar definitivamente", danger: true }
-  );
-  if (!confirmed) return;
+  if (!confirm(`¿Eliminar definitivamente la caja «${box.name || "sin nombre"}»?\n\nEsta acción no se puede deshacer.`)) return;
   try {
     await deleteDoc(doc(db, "users", currentUser.uid, "assets", id));
     if (selectedNetworkBoxId === id) selectedNetworkBoxId = "";
@@ -4130,11 +4072,7 @@ async function deleteNetworkLocality(id) {
   if (!locality) return;
   const used = networkBoxes.filter(b => normalizeText(b.locality) === normalizeText(locality.name)).length;
   if (used) return toast(`No se puede eliminar: ${used} caja(s) usan esta localidad.`, "error");
-  const confirmed = await confirmCahesa(
-    `¿Eliminar la localidad «${locality.name}»?`,
-    { title: "Eliminar localidad", confirmText: "Eliminar", danger: true }
-  );
-  if (!confirmed) return;
+  if (!confirm(`¿Eliminar la localidad «${locality.name}»?`)) return;
   try {
     await deleteDoc(doc(db, "users", currentUser.uid, "assets", id));
     toast("Localidad eliminada.");
