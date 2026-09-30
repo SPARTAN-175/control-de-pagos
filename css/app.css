@@ -151,39 +151,21 @@
 .readonly-notice span{color:#64748b;font-size:12px;line-height:1.5}
 @media(max-width:850px){.mikrotik-grid{grid-template-columns:1fr}.connector-meta{grid-template-columns:1fr}.section-head{gap:10px}.compact-search{width:100%}}
 
-/* =========================================================
-   COLOCACION DE NAP EN MAPA - ESTILO GOOGLE EARTH
-========================================================= */
-.network-map-placement-pin {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  z-index: 900;
-  transform: translate(-50%, -100%);
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
 
-.network-map-placement-pin.hidden {
-  display: none;
-}
-
-.network-map-placement-marker {
-  font-size: 36px;
-  line-height: 1;
-  filter: drop-shadow(0 2px 3px rgba(0,0,0,.35));
-}
-
-.network-map-placement-label {
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, .92);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-  box-shadow: 0 3px 10px rgba(0,0,0,.18);
+/* Confirmaciones CAHESA: reemplazo visual de confirm() nativo */
+.cahesa-confirm-dialog{border:0;padding:0;background:transparent;width:min(440px,calc(100vw - 32px));max-width:440px}
+.cahesa-confirm-dialog::backdrop{background:rgba(15,23,42,.58);backdrop-filter:blur(2px)}
+.cahesa-confirm-card{background:#fff;border-radius:20px;padding:24px;box-shadow:0 22px 60px rgba(15,23,42,.24)}
+.cahesa-confirm-icon{width:46px;height:46px;border-radius:14px;background:#fff1f2;color:#b91c1c;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;margin-bottom:16px}
+.cahesa-confirm-content h2{margin:0 0 8px;font-size:20px;color:#172033}
+.cahesa-confirm-content p{margin:0;color:#687386;line-height:1.55;white-space:pre-line}
+.cahesa-confirm-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
+.cahesa-confirm-actions button{min-width:110px}
+.cahesa-confirm-actions .danger-button{background:#dc2626;color:#fff}
+.cahesa-confirm-actions .danger-button:hover{background:#b91c1c}
+@media(max-width:600px){
+  .cahesa-confirm-dialog{width:calc(100vw - 24px)}
+  .cahesa-confirm-card{padding:20px;border-radius:18px}
+  .cahesa-confirm-actions{flex-direction:column-reverse}
+  .cahesa-confirm-actions button{width:100%}
 }
