@@ -1515,7 +1515,25 @@
        MODAL LOCALIDADES DEL MAPA DE RED
        ===================================================== -->
 
-  <dialog id="networkLocalitiesDialog">
+  
+  <!-- =====================================================
+       CONFIRMACIÓN CAHESA
+       ===================================================== -->
+  <dialog id="cahesaConfirmDialog" class="cahesa-confirm-dialog">
+    <div class="cahesa-confirm-card">
+      <div class="cahesa-confirm-icon" aria-hidden="true">!</div>
+      <div class="cahesa-confirm-content">
+        <h2 id="cahesaConfirmTitle">Confirmar acción</h2>
+        <p id="cahesaConfirmMessage"></p>
+      </div>
+      <div class="cahesa-confirm-actions">
+        <button id="cahesaConfirmCancel" type="button" class="ghost">Cancelar</button>
+        <button id="cahesaConfirmAccept" type="button" class="danger-button">Aceptar</button>
+      </div>
+    </div>
+  </dialog>
+
+<dialog id="networkLocalitiesDialog">
     <form id="networkLocalitiesForm" class="dialog-card">
       <div class="dialog-head">
         <div>
