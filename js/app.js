@@ -92,6 +92,7 @@ let networkSatelliteOn = false;
 let networkMarkersLayer = null;
 let selectedNetworkBoxId = "";
 let pendingNetworkMapPlacement = null;
+let networkPlacementMarker = null;
 
 let deferredInstall = null;
 
@@ -2255,7 +2256,7 @@ $("#clientForm").addEventListener(
         if (!selectedPort || !Number.isInteger(selectedPort) || selectedPort < 1 || selectedPort > Number(box.capacity || 0)) throw new Error(`El puerto debe estar entre 1 y ${Number(box.capacity || 0)}.`);
         if (clients.some(other => other.id !== id && other.networkBoxId === selectedBoxId && Number(other.networkPort) === selectedPort)) throw new Error("Ese puerto ya está asignado a otro cliente.");
       } else if (selectedPort) {
-        throw new Error("Selecciona una caja antes de asignar un puerto.");
+        throw new Error("Selecciona un NAP antes de asignar un puerto.");
       }
       if ((latitudeValue !== null && !Number.isFinite(latitudeValue)) || (longitudeValue !== null && !Number.isFinite(longitudeValue))) throw new Error("Las coordenadas no son válidas.");
       if ((latitudeValue === null) !== (longitudeValue === null)) throw new Error("Captura latitud y longitud juntas.");
@@ -3551,14 +3552,10 @@ function initNetworkMap() {
     });
     networkMarkersLayer = L.layerGroup().addTo(networkMap);
     networkMap.on("click", e => {
+      if (!pendingNetworkMapPlacement || !networkPlacementMarker) return;
       const lat = Number(e.latlng.lat.toFixed(7));
       const lng = Number(e.latlng.lng.toFixed(7));
-      if (pendingNetworkMapPlacement) {
-        const target = pendingNetworkMapPlacement;
-        pendingNetworkMapPlacement = null;
-        openNetworkBoxDialog(target.isNew ? null : target.box, { latitude: lat, longitude: lng });
-        toast("Punto colocado en el mapa. Revisa los datos y guarda la caja.");
-      }
+      networkPlacementMarker.setLatLng([lat, lng]);
     });
   }
   setTimeout(() => networkMap.invalidateSize(), 80);
@@ -3595,7 +3592,7 @@ function focusNetworkBox(box) {
   if (!box || !networkMap) return;
   const lat = Number(box.latitude), lng = Number(box.longitude);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    toast("Esta caja no tiene coordenadas válidas.", "error");
+    toast("Este NAP no tiene coordenadas válidas.", "error");
     return;
   }
   selectedNetworkBoxId = box.id;
@@ -3624,11 +3621,11 @@ function renderNetwork() {
   const visibleBoxes = filteredNetworkBoxes();
   if (!networkBoxes.length) {
     list.className = "network-box-list empty-state";
-    list.textContent = "No hay cajas registradas. Puedes importar un KML o crear una caja.";
+    list.textContent = "No hay NAP registrados. Puedes importar un KML o crear una caja.";
     detail.innerHTML = `<div class="empty-state">Crea o importa cajas para comenzar a construir tu mapa de red.</div>`;
   } else if (!visibleBoxes.length) {
     list.className = "network-box-list empty-state";
-    list.textContent = "No hay cajas que coincidan con el filtro.";
+    list.textContent = "No hay NAP que coincidan con el filtro.";
   } else {
     list.className = "network-box-list";
     list.innerHTML = visibleBoxes.map(box => {
@@ -3652,7 +3649,7 @@ function renderNetworkDetail() {
   if (!detail) return;
   const box = networkBoxes.find(b => b.id === selectedNetworkBoxId);
   if (!box) {
-    detail.innerHTML = `<div class="empty-state">Selecciona una caja en el mapa o en la lista.</div>`;
+    detail.innerHTML = `<div class="empty-state">Selecciona un NAP en el mapa o en la lista.</div>`;
     return;
   }
 
@@ -3663,7 +3660,7 @@ function renderNetworkDetail() {
 
   detail.innerHTML = `
     <div class="section-head">
-      <div><h3>${escapeHtml(box.name || "Caja de red")}</h3><p class="muted">${escapeHtml(box.code || "Sin código")} · ${escapeHtml(box.locality || "Sin localidad")} · ${networkStatusLabel(box.status)}</p></div>
+      <div><h3>${escapeHtml(box.name || "NAP")}</h3><p class="muted">${escapeHtml(box.code || "Sin código")} · ${escapeHtml(box.locality || "Sin localidad")} · ${networkStatusLabel(box.status)}</p></div>
       <button type="button" class="ghost small" data-edit-network-box="${escapeHtml(box.id)}">Editar</button>
     </div>
     <div class="network-detail-meta">
@@ -3740,7 +3737,7 @@ function renderNetworkMarkers() {
 }
 
 function openNetworkBoxDialog(box = null, coordinateOverride = null) {
-  $("#networkBoxDialogTitle").textContent = box ? "Editar caja de red" : "Nueva caja de red";
+  $("#networkBoxDialogTitle").textContent = box ? "Editar NAP de red" : "Nuevo NAP de red";
   $("#networkBoxId").value = box?.id || "";
   $("#networkBoxName").value = box?.name || "";
   $("#networkBoxCode").value = box?.code || "";
@@ -3754,17 +3751,63 @@ function openNetworkBoxDialog(box = null, coordinateOverride = null) {
   $("#networkBoxNotes").value = box?.notes || "";
   $("#deleteNetworkBoxBtn").classList.toggle("hidden", !box);
   $("#deactivateNetworkBoxBtn").classList.toggle("hidden", !box);
-  $("#deactivateNetworkBoxBtn").textContent = box?.status === "inactive" ? "Reactivar caja" : "Dar de baja";
+  $("#deactivateNetworkBoxBtn").textContent = box?.status === "inactive" ? "Reactivar NAP" : "Dar de baja";
   $("#networkBoxDialog").showModal();
+}
+
+function startNetworkBoxPlacement(target) {
+  pendingNetworkMapPlacement = target;
+  initNetworkMap();
+  if (!networkMap) return;
+
+  if (networkPlacementMarker) {
+    networkMap.removeLayer(networkPlacementMarker);
+    networkPlacementMarker = null;
+  }
+
+  const initialLat = Number(target.box?.latitude);
+  const initialLng = Number(target.box?.longitude);
+  const center = networkMap.getCenter();
+  const lat = Number.isFinite(initialLat) ? initialLat : Number(center.lat.toFixed(7));
+  const lng = Number.isFinite(initialLng) ? initialLng : Number(center.lng.toFixed(7));
+
+  networkPlacementMarker = L.marker([lat, lng], {
+    draggable: true,
+    autoPan: true,
+    zIndexOffset: 1000,
+    title: "Arrastra para colocar el NAP"
+  }).addTo(networkMap);
+
+  networkPlacementMarker.bindTooltip(
+    target.isNew ? "Arrastra esta chincheta para colocar el NAP" : "Arrastra la chincheta para mover el NAP",
+    { permanent: true, direction: "top", offset: [0, -12] }
+  ).openTooltip();
+
+  const finishPlacement = () => {
+    const pos = networkPlacementMarker.getLatLng();
+    const coordinate = {
+      latitude: Number(pos.lat.toFixed(7)),
+      longitude: Number(pos.lng.toFixed(7))
+    };
+    networkMap.removeLayer(networkPlacementMarker);
+    networkPlacementMarker = null;
+    pendingNetworkMapPlacement = null;
+    openNetworkBoxDialog(target.isNew ? null : target.box, coordinate);
+    toast("Ubicación colocada. Revisa los datos y guarda el NAP.");
+  };
+
+  networkPlacementMarker.on("dragend", finishPlacement);
+  networkMap.setView([lat, lng], Math.max(networkMap.getZoom(), 17), { animate: true });
+  toast(target.isNew
+    ? "Arrastra la chincheta hasta la ubicación exacta del NAP."
+    : "Arrastra la chincheta para ajustar la ubicación del NAP.");
 }
 
 function chooseNetworkBoxLocation() {
   const boxId = $("#networkBoxId").value || "";
   const existing = boxId ? networkBoxes.find(b => b.id === boxId) : null;
-  pendingNetworkMapPlacement = existing ? { isNew: false, box: existing } : { isNew: true, box: null };
   $("#networkBoxDialog").close();
-  initNetworkMap();
-  toast("Ahora toca el mapa exactamente donde está la caja.");
+  startNetworkBoxPlacement(existing ? { isNew: false, box: existing } : { isNew: true, box: null });
 }
 
 async function saveNetworkBox(e) {
@@ -3805,7 +3848,7 @@ async function saveNetworkBox(e) {
     toast(friendlyError(err), "error");
   } finally {
     btn.disabled = false;
-    btn.textContent = "Guardar caja";
+    btn.textContent = "Guardar NAP";
   }
 }
 
@@ -3895,7 +3938,7 @@ function parseKmlBoxes(text) {
     const coordinates = kmlText(point, "coordinates").split(",").map(Number);
     if (!Number.isFinite(coordinates[0]) || !Number.isFinite(coordinates[1])) return;
     const data = kmlExtendedData(placemark);
-    const name = kmlText(placemark, "name") || `Caja importada ${index + 1}`;
+    const name = kmlText(placemark, "name") || `NAP importado ${index + 1}`;
     const code = data.codigo || data.code || data.cto || data.caja || "";
     const capacityRaw = data.capacidad || data.capacity || data.puertos || data.ports || "8";
     const capacity = Math.min(512, Math.max(1, Number.parseInt(capacityRaw, 10) || 8));
@@ -3928,7 +3971,7 @@ async function importNetworkKml(file) {
       });
       await batch.commit();
     }
-    toast(`Listo: ${boxes.length} cajas importadas desde KML.`);
+    toast(`Listo: ${boxes.length} NAP importados desde KML.`);
   } catch (err) {
     console.error("ERROR IMPORTANDO KML:", err);
     toast(friendlyError(err), "error");
@@ -4027,7 +4070,7 @@ async function deleteNetworkLocality(id) {
   const locality = networkLocalities.find(l => l.id === id);
   if (!locality) return;
   const used = networkBoxes.filter(b => normalizeText(b.locality) === normalizeText(locality.name)).length;
-  if (used) return toast(`No se puede eliminar: ${used} caja(s) usan esta localidad.`, "error");
+  if (used) return toast(`No se puede eliminar: ${used} NAP usan esta localidad.`, "error");
   if (!confirm(`¿Eliminar la localidad «${locality.name}»?`)) return;
   try {
     await deleteDoc(doc(db, "users", currentUser.uid, "assets", id));
@@ -4038,13 +4081,13 @@ async function deleteNetworkLocality(id) {
 async function seedNetworkExamples() {
   if (!currentUser) return;
   if (networkBoxes.length) {
-    toast("Ya tienes cajas registradas. Los ejemplos no se agregaron.", "error");
+    toast("Ya tienes NAP registrados. Los ejemplos no se agregaron.", "error");
     return;
   }
   const examples = [
-    { name: "Caja Principal", code: "CTO-001", capacity: 8, status: "active", latitude: 19.4326, longitude: -99.1332, address: "Ejemplo de ubicación", notes: "Caja de demostración" },
-    { name: "Caja Norte", code: "CTO-002", capacity: 16, status: "active", latitude: 19.4380, longitude: -99.1260, address: "Ejemplo de ubicación", notes: "Segunda caja de demostración" },
-    { name: "Caja Sur", code: "CTO-003", capacity: 8, status: "maintenance", latitude: 19.4255, longitude: -99.1390, address: "Ejemplo de ubicación", notes: "Ejemplo en mantenimiento" }
+    { name: "NAP Principal", code: "CTO-001", capacity: 8, status: "active", latitude: 19.4326, longitude: -99.1332, address: "Ejemplo de ubicación", notes: "NAP de demostración" },
+    { name: "NAP Norte", code: "CTO-002", capacity: 16, status: "active", latitude: 19.4380, longitude: -99.1260, address: "Ejemplo de ubicación", notes: "Segundo NAP de demostración" },
+    { name: "NAP Sur", code: "CTO-003", capacity: 8, status: "maintenance", latitude: 19.4255, longitude: -99.1390, address: "Ejemplo de ubicación", notes: "Ejemplo en mantenimiento" }
   ];
   try {
     showLoading(true);
@@ -4052,7 +4095,7 @@ async function seedNetworkExamples() {
       const r = doc(collection(db, "users", currentUser.uid, "assets"));
       await setDoc(r, { ...item, type: "networkBox", createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
     }
-    toast("Se agregaron 3 cajas de ejemplo.");
+    toast("Se agregaron 3 NAP de ejemplo.");
   } catch (err) {
     console.error("ERROR EJEMPLOS RED:", err);
     toast(friendlyError(err), "error");
