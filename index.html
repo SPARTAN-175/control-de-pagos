@@ -845,10 +845,10 @@
         <div class="page-head">
           <div>
             <h1>Mapa de red</h1>
-            <p class="muted">Administra NAP, puertos y ubicación de tus clientes.</p>
+            <p class="muted">Administra cajas, puertos y ubicación de tus clientes.</p>
           </div>
           <div class="network-actions">
-            <button id="addNetworkBoxBtn" class="primary" type="button">+ Nuevo NAP</button>
+            <button id="addNetworkBoxBtn" class="primary" type="button">+ Nueva caja</button>
             <button id="importNetworkKmlBtn" class="ghost" type="button">Importar KML</button>
             <input id="importNetworkKmlFile" type="file" accept=".kml,.xml,application/vnd.google-earth.kml+xml,text/xml" hidden>
             <button id="networkMapViewBtn" class="ghost active" type="button">Mapa</button>
@@ -867,8 +867,8 @@
             <div class="section-card">
               <div class="section-head">
                 <div>
-                  <h3>NAP de red</h3>
-                  <p class="muted">Filtra por localidad o busca un NAP para ubicarlo automáticamente.</p>
+                  <h3>Cajas de red</h3>
+                  <p class="muted">Filtra por localidad o busca una caja para ubicarla automáticamente.</p>
                 </div>
               </div>
               <div class="network-filters">
@@ -878,7 +878,7 @@
                   </select>
                 </label>
                 <label class="network-filter-field">Buscar caja
-                  <input id="networkBoxSearch" type="search" placeholder="Nombre, código o dirección del NAP">
+                  <input id="networkBoxSearch" type="search" placeholder="Nombre, código o dirección">
                 </label>
               </div>
               <div class="network-locality-actions">
@@ -888,7 +888,7 @@
             </div>
 
             <div id="networkBoxDetail" class="section-card network-detail-card">
-              <div class="empty-state">Selecciona un NAP en el mapa o en la lista.</div>
+              <div class="empty-state">Selecciona una caja en el mapa o en la lista.</div>
             </div>
           </aside>
         </div>
@@ -1520,7 +1520,7 @@
       <div class="dialog-head">
         <div>
           <h2>Localidades</h2>
-          <p class="muted">Agrega los lugares que utilizarás para organizar tus NAP.</p>
+          <p class="muted">Agrega los lugares que utilizarás para organizar tus cajas de red.</p>
         </div>
         <button type="button" data-close-dialog="networkLocalitiesDialog" class="icon-btn" aria-label="Cerrar">×</button>
       </div>
@@ -1546,14 +1546,14 @@
   </dialog>
 
   <!-- =====================================================
-       MODAL NUEVO / EDITAR NAP
+       MODAL NUEVA / EDITAR CAJA DE RED
        ===================================================== -->
 
   <dialog id="networkBoxDialog">
     <form id="networkBoxForm" class="dialog-card">
       <div class="dialog-head">
         <div>
-          <h2 id="networkBoxDialogTitle">Nuevo NAP</h2>
+          <h2 id="networkBoxDialogTitle">Nueva caja de red</h2>
           <p class="muted">La información se guarda en tu espacio privado de Firebase.</p>
         </div>
         <button type="button" data-close-dialog="networkBoxDialog" class="icon-btn" aria-label="Cerrar">×</button>
@@ -1582,7 +1582,7 @@
         <button type="button" data-close-dialog="networkBoxDialog" class="ghost">Cancelar</button>
         <button id="deactivateNetworkBoxBtn" type="button" class="ghost hidden">Dar de baja</button>
         <button id="deleteNetworkBoxBtn" type="button" class="danger-button hidden">Eliminar</button>
-        <button id="saveNetworkBoxBtn" class="primary" type="submit">Guardar NAP</button>
+        <button id="saveNetworkBoxBtn" class="primary" type="submit">Guardar caja</button>
       </div>
     </form>
   </dialog>
@@ -1692,7 +1692,7 @@
 
         <label>
 
-          NAP
+          Caja de red
 
           <select id="clientNetworkBox">
             <option value="">Sin asignar</option>
