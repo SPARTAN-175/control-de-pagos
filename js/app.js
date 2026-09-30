@@ -42,6 +42,32 @@ import {
 import { firebaseConfig } from "../firebase-config.js";
 
 
+
+/* =========================================================
+   CONFIRMACIÓN CAHESA
+========================================================= */
+let pendingCahesaConfirm = null;
+function confirmCahesa(message, options = {}) {
+  const dialog = $("#cahesaConfirmDialog");
+  if (!dialog) return Promise.resolve(window.confirm(message));
+  $("#cahesaConfirmTitle").textContent = options.title || "Confirmar acción";
+  $("#cahesaConfirmMessage").textContent = message;
+  $("#cahesaConfirmAccept").textContent = options.confirmText || "Aceptar";
+  $("#cahesaConfirmCancel").textContent = options.cancelText || "Cancelar";
+  $("#cahesaConfirmAccept").classList.toggle("danger-button", options.danger !== false);
+  return new Promise(resolve => {
+    pendingCahesaConfirm = resolve;
+    dialog.showModal();
+  });
+}
+function finishCahesaConfirm(result) {
+  const resolve = pendingCahesaConfirm;
+  pendingCahesaConfirm = null;
+  const dialog = $("#cahesaConfirmDialog");
+  if (dialog?.open) dialog.close();
+  if (resolve) resolve(Boolean(result));
+}
+
 /* =========================================================
    FIREBASE
 ========================================================= */
@@ -2451,7 +2477,12 @@ async function deleteClient(clientId) {
   if (!currentUser || !clientId) return;
   const client = clients.find(c => c.id === clientId);
   if (!client) return;
-  const confirmed = confirm(`¿Deseas eliminar a ${client.name || "este cliente"}?\n\nEsta acción eliminará el registro del cliente y no se puede deshacer. Los pagos históricos no se eliminarán automáticamente.`);
+  const confirmed = await confirmCahesa(
+    `¿Deseas eliminar a ${client.name || "este cliente"}?
+
+Esta acción eliminará el registro del cliente y no se puede deshacer. Los pagos históricos no se eliminarán automáticamente.`,
+    { title: "Eliminar cliente", confirmText: "Eliminar", danger: true }
+  );
   if (!confirmed) return;
 
   try {
@@ -3740,7 +3771,12 @@ function renderNetworkMarkers() {
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
     const count = networkBoxClients(box.id).length;
     const marker = L.marker([lat, lng], {
-      icon: L.divIcon({ className: "", html: `<div class="network-marker-pin"><span>⌂</span><small>${escapeHtml(box.code || box.name || "Caja")}</small></div>`, iconSize: [100, 42], iconAnchor: [50, 36] })
+      icon: L.divIcon({ className: "", html: `<div class="network-marker-pin">
+  <span class="network-marker-icon" aria-hidden="true">
+    <svg viewBox="0 0 24 24"><path d="M4 20h16M6 17V9l6-4 6 4v8M9 17v-5h6v5M4 20l2-3h12l2 3"/></svg>
+  </span>
+  <small>${escapeHtml(box.code || box.name || "NAP")}</small>
+</div>`, iconSize: [100, 42], iconAnchor: [50, 36] })
     });
     const capacity = Math.max(1, Number(box.capacity || 1));
     const free = Math.max(0, capacity - count);
@@ -3767,7 +3803,9 @@ function renderNetworkMarkers() {
       box ? `${box.name} · Puerto ${Number(c.networkPort || 0) || "—"}` : "Sin caja asignada"
     ].filter(Boolean).map(escapeHtml).join("<br>");
     const marker = L.marker([lat, lng], {
-      icon: L.divIcon({ className: "", html: `<div class="network-client-marker">⌂</div>`, iconSize: [30, 30], iconAnchor: [15, 15] })
+      icon: L.divIcon({ className: "", html: `<div class="network-client-marker" aria-label="Cliente">
+  <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c.7-4 2.9-6 6.5-6s5.8 2 6.5 6"/></svg>
+</div>`, iconSize: [30, 30], iconAnchor: [15, 15] })
     });
     marker.bindPopup(`<strong>${escapeHtml(c.name || "Cliente")}</strong><br>${details}`);
     marker.on("click", () => { if (box) selectedNetworkBoxId = box.id; });
@@ -3856,17 +3894,53 @@ async function saveNetworkBox(e) {
 async function deactivateSelectedNetworkBox() {
   const id = $("#networkBoxId").value;
   if (!id || !currentUser) return;
+
   const box = networkBoxes.find(b => b.id === id);
   if (!box) return;
+
   const nextStatus = box.status === "inactive" ? "active" : "inactive";
-  const action = nextStatus === "inactive" ? "dar de baja" : "reactivar";
-  if (!confirm(`¿Deseas ${action} la caja «${box.name || "sin nombre"}»?\n\nLos clientes permanecerán registrados y la caja conservará su información.`)) return;
+  const isDeactivating = nextStatus === "inactive";
+
+  const confirmed = await confirmCahesa(
+    `¿Deseas ${isDeactivating ? "dar de baja" : "reactivar"} el NAP «${box.name || "sin nombre"}»?\n\nLos clientes permanecerán registrados y el NAP conservará su información.`,
+    {
+      title: isDeactivating ? "Dar de baja NAP" : "Reactivar NAP",
+      confirmText: isDeactivating ? "Dar de baja" : "Reactivar",
+      danger: isDeactivating
+    }
+  );
+  if (!confirmed) return;
+
+  const button = $("#deactivateNetworkBoxBtn");
+  if (button) button.disabled = true;
+
   try {
-    await updateDoc(doc(db, "users", currentUser.uid, "assets", id), { status: nextStatus, updatedAt: serverTimestamp() });
-    toast(nextStatus === "inactive" ? "Caja dada de baja. Sus clientes siguen registrados." : "Caja reactivada.");
+    // setDoc(..., merge) tolera mejor documentos existentes y mantiene
+    // intactos todos los demás campos del NAP.
+    await setDoc(
+      doc(db, "users", currentUser.uid, "assets", id),
+      { status: nextStatus, updatedAt: serverTimestamp() },
+      { merge: true }
+    );
+
+    // Reflejo inmediato en pantalla; Firestore seguirá sincronizando después.
+    const localBox = networkBoxes.find(b => b.id === id);
+    if (localBox) localBox.status = nextStatus;
+
+    $("#networkBoxStatus").value = nextStatus;
+    $("#deactivateNetworkBoxBtn").textContent = isDeactivating ? "Reactivar NAP" : "Dar de baja NAP";
+    renderNetwork();
+
+    toast(
+      isDeactivating
+        ? "NAP dado de baja correctamente."
+        : "NAP reactivado correctamente."
+    );
   } catch (err) {
-    console.error("ERROR CAMBIANDO ESTADO CAJA:", err);
+    console.error("ERROR CAMBIANDO ESTADO NAP:", err);
     toast(friendlyError(err), "error");
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 
@@ -3880,7 +3954,11 @@ async function deleteSelectedNetworkBox() {
     toast("No se puede eliminar una caja que todavía tiene clientes conectados. Puedes darle de baja para conservar su historial.", "error");
     return;
   }
-  if (!confirm(`¿Eliminar definitivamente la caja «${box.name || "sin nombre"}»?\n\nEsta acción no se puede deshacer.`)) return;
+  const confirmed = await confirmCahesa(
+    `¿Eliminar definitivamente el NAP «${box.name || "sin nombre"}»?\n\nEsta acción no se puede deshacer.`,
+    { title: "Eliminar NAP definitivamente", confirmText: "Eliminar definitivamente", danger: true }
+  );
+  if (!confirmed) return;
   try {
     await deleteDoc(doc(db, "users", currentUser.uid, "assets", id));
     if (selectedNetworkBoxId === id) selectedNetworkBoxId = "";
@@ -4072,7 +4150,11 @@ async function deleteNetworkLocality(id) {
   if (!locality) return;
   const used = networkBoxes.filter(b => normalizeText(b.locality) === normalizeText(locality.name)).length;
   if (used) return toast(`No se puede eliminar: ${used} caja(s) usan esta localidad.`, "error");
-  if (!confirm(`¿Eliminar la localidad «${locality.name}»?`)) return;
+  const confirmed = await confirmCahesa(
+    `¿Eliminar la localidad «${locality.name}»?`,
+    { title: "Eliminar localidad", confirmText: "Eliminar", danger: true }
+  );
+  if (!confirmed) return;
   try {
     await deleteDoc(doc(db, "users", currentUser.uid, "assets", id));
     toast("Localidad eliminada.");
@@ -4104,6 +4186,11 @@ async function seedNetworkExamples() {
     showLoading(false);
   }
 }
+
+
+$("#cahesaConfirmAccept")?.addEventListener("click", () => finishCahesaConfirm(true));
+$("#cahesaConfirmCancel")?.addEventListener("click", () => finishCahesaConfirm(false));
+$("#cahesaConfirmDialog")?.addEventListener("cancel", e => { e.preventDefault(); finishCahesaConfirm(false); });
 
 $("#addNetworkBoxBtn")?.addEventListener("click", () => {
   startNetworkBoxMapPlacement();
