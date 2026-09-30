@@ -3550,85 +3550,65 @@ function initNetworkMap() {
       attribution: 'Tiles &copy; Esri'
     });
     networkMarkersLayer = L.layerGroup().addTo(networkMap);
-    networkMap.on("click", e => {
-      // Mientras se está colocando un NAP, un toque en el mapa solo mueve
-      // la chincheta temporal. El formulario se abre al terminar de
-      // arrastrarla (dragend).
-      if (pendingNetworkMapPlacement?.marker) {
-        pendingNetworkMapPlacement.marker.setLatLng(e.latlng);
-      }
+
+    // Modo de colocación estilo Google Earth: la chincheta permanece fija
+    // en el centro del mapa y el usuario mueve el mapa debajo de ella.
+    const placementPin = document.createElement("div");
+    placementPin.className = "network-map-placement-pin hidden";
+    placementPin.innerHTML = `
+      <div class="network-map-placement-marker">📍</div>
+      <div class="network-map-placement-label">Colocar NAP</div>
+    `;
+    el.appendChild(placementPin);
+    networkMap.__placementPin = placementPin;
+
+    networkMap.on("click", () => {
+      if (!pendingNetworkMapPlacement) return;
+
+      // La coordenada elegida es SIEMPRE el centro del mapa, exactamente
+      // debajo de la chincheta fija.
+      const center = networkMap.getCenter();
+      const lat = Number(center.lat.toFixed(7));
+      const lng = Number(center.lng.toFixed(7));
+      const target = pendingNetworkMapPlacement;
+      pendingNetworkMapPlacement = null;
+      setNetworkMapPlacementPin(false);
+
+      openNetworkBoxDialog(
+        target.isNew ? null : target.box,
+        { latitude: lat, longitude: lng }
+      );
+      toast("Ubicación colocada. Revisa los datos y guarda el NAP.");
     });
   }
   setTimeout(() => networkMap.invalidateSize(), 80);
+  setNetworkMapPlacementPin(Boolean(pendingNetworkMapPlacement));
   renderNetworkMarkers();
 }
 
-function startNetworkBoxMapPlacement(target) {
+function setNetworkMapPlacementPin(active) {
+  if (!networkMap?.__placementPin) return;
+  networkMap.__placementPin.classList.toggle("hidden", !active);
+}
+
+function startNetworkBoxMapPlacement(target = null) {
+  pendingNetworkMapPlacement = target
+    ? { isNew: false, box: target }
+    : { isNew: true, box: null };
+
   initNetworkMap();
-  if (!networkMap) {
-    toast("No se pudo cargar el mapa.", "error");
-    return;
+
+  // Al editar, comenzamos exactamente sobre el NAP existente.
+  if (target && Number.isFinite(Number(target.latitude)) && Number.isFinite(Number(target.longitude))) {
+    networkMap.setView(
+      [Number(target.latitude), Number(target.longitude)],
+      Math.max(networkMap.getZoom(), 18),
+      { animate: true }
+    );
   }
 
-  if (pendingNetworkMapPlacement?.marker) {
-    networkMap.removeLayer(pendingNetworkMapPlacement.marker);
-  }
-
-  const initialLatLng = target?.box
-    ? [Number(target.box.latitude), Number(target.box.longitude)]
-    : [networkMap.getCenter().lat, networkMap.getCenter().lng];
-
-  if (!Number.isFinite(initialLatLng[0]) || !Number.isFinite(initialLatLng[1])) {
-    toast("No hay una posición inicial válida para colocar el NAP.", "error");
-    return;
-  }
-
-  const marker = L.marker(initialLatLng, {
-    draggable: true,
-    zIndexOffset: 2000,
-    icon: L.divIcon({
-      className: "network-placement-marker",
-      html: `<div class="network-marker-pin"><span>⌂</span><small>Mover NAP</small></div>`,
-      iconSize: [100, 42],
-      iconAnchor: [50, 36]
-    })
-  }).addTo(networkMap);
-
-  pendingNetworkMapPlacement = {
-    isNew: Boolean(target?.isNew),
-    box: target?.box || null,
-    marker
-  };
-
-  const openFormFromMarker = () => {
-    const current = pendingNetworkMapPlacement;
-    if (!current || current.marker !== marker) return;
-    const latlng = marker.getLatLng();
-    pendingNetworkMapPlacement = null;
-    networkMap.removeLayer(marker);
-    const latitude = Number(latlng.lat.toFixed(7));
-    const longitude = Number(latlng.lng.toFixed(7));
-    openNetworkBoxDialog(current.isNew ? null : current.box, { latitude, longitude });
-    toast(current.isNew
-      ? "Ubicación lista. Completa los datos del NAP y guárdalo."
-      : "Ubicación actualizada. Revisa los datos del NAP y guárdalo.");
-  };
-
-  marker.on("dragend", openFormFromMarker);
-  marker.bindTooltip("Arrastra esta chincheta hasta la ubicación exacta del NAP", {
-    direction: "top",
-    offset: [0, -28],
-    opacity: 0.95
-  }).openTooltip();
-
-  networkMap.setView(initialLatLng, Math.max(networkMap.getZoom(), 17), { animate: true });
-  toast(target?.isNew
-    ? "Arrastra la chincheta hasta la ubicación exacta del nuevo NAP."
-    : "Arrastra la chincheta para corregir la ubicación del NAP.");
-}
-  }
-  setTimeout(() => networkMap.invalidateSize(), 80);
-  renderNetworkMarkers();
+  setNetworkMapPlacementPin(true);
+  toast("Mueve el mapa hasta colocar la chincheta sobre el NAP y toca el mapa para fijarlo.");
 }
 
 function populateNetworkLocalityControls() {
@@ -3828,7 +3808,7 @@ function chooseNetworkBoxLocation() {
   const boxId = $("#networkBoxId").value || "";
   const existing = boxId ? networkBoxes.find(b => b.id === boxId) : null;
   $("#networkBoxDialog").close();
-  startNetworkBoxMapPlacement(existing ? { isNew: false, box: existing } : { isNew: true, box: null });
+  startNetworkBoxMapPlacement(existing);
 }
 
 async function saveNetworkBox(e) {
@@ -4126,8 +4106,7 @@ async function seedNetworkExamples() {
 }
 
 $("#addNetworkBoxBtn")?.addEventListener("click", () => {
-  $("#networkBoxDialog")?.close();
-  startNetworkBoxMapPlacement({ isNew: true, box: null });
+  startNetworkBoxMapPlacement();
 });
 $("#networkMapViewBtn")?.addEventListener("click", () => {
   networkMapMode = "map";
