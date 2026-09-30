@@ -42,6 +42,54 @@ import {
 import { firebaseConfig } from "../firebase-config.js";
 
 
+
+/* =========================================================
+   CONFIRMACIÓN CAHESA
+   Reemplaza confirm() nativo por una tarjeta propia.
+========================================================= */
+let pendingCahesaConfirm = null;
+
+function confirmCahesa(message, options = {}) {
+  const dialog = $("#cahesaConfirmDialog");
+  if (!dialog) return Promise.resolve(false);
+
+  const title = options.title || "Confirmar acción";
+  const confirmText = options.confirmText || "Aceptar";
+  const cancelText = options.cancelText || "Cancelar";
+  const danger = options.danger !== false;
+
+  $("#cahesaConfirmTitle").textContent = title;
+  $("#cahesaConfirmMessage").textContent = message;
+  $("#cahesaConfirmAccept").textContent = confirmText;
+  $("#cahesaConfirmCancel").textContent = cancelText;
+  $("#cahesaConfirmAccept").classList.toggle("danger-button", danger);
+  $("#cahesaConfirmAccept").classList.toggle("primary", !danger);
+
+  return new Promise(resolve => {
+    if (pendingCahesaConfirm) pendingCahesaConfirm(false);
+    pendingCahesaConfirm = resolve;
+    dialog.showModal();
+  });
+}
+
+function finishCahesaConfirm(result) {
+  const dialog = $("#cahesaConfirmDialog");
+  const resolve = pendingCahesaConfirm;
+  pendingCahesaConfirm = null;
+  if (dialog?.open) dialog.close();
+  if (resolve) resolve(Boolean(result));
+}
+
+$("#cahesaConfirmAccept")?.addEventListener("click", () => finishCahesaConfirm(true));
+$("#cahesaConfirmCancel")?.addEventListener("click", () => finishCahesaConfirm(false));
+$("#cahesaConfirmDialog")?.addEventListener("cancel", e => {
+  e.preventDefault();
+  finishCahesaConfirm(false);
+});
+$("#cahesaConfirmDialog")?.addEventListener("close", () => {
+  if (pendingCahesaConfirm) finishCahesaConfirm(false);
+});
+
 /* =========================================================
    FIREBASE
 ========================================================= */
@@ -2451,7 +2499,10 @@ async function deleteClient(clientId) {
   if (!currentUser || !clientId) return;
   const client = clients.find(c => c.id === clientId);
   if (!client) return;
-  const confirmed = confirm(`¿Deseas eliminar a ${client.name || "este cliente"}?\n\nEsta acción eliminará el registro del cliente y no se puede deshacer. Los pagos históricos no se eliminarán automáticamente.`);
+  const confirmed = await confirmCahesa(
+    `¿Deseas eliminar a ${client.name || "este cliente"}?\n\nEsta acción eliminará el registro del cliente y no se puede deshacer. Los pagos históricos no se eliminarán automáticamente.`,
+    { title: "Eliminar cliente", confirmText: "Eliminar", danger: true }
+  );
   if (!confirmed) return;
 
   try {
@@ -3550,65 +3601,19 @@ function initNetworkMap() {
       attribution: 'Tiles &copy; Esri'
     });
     networkMarkersLayer = L.layerGroup().addTo(networkMap);
-
-    // Modo de colocación estilo Google Earth: la chincheta permanece fija
-    // en el centro del mapa y el usuario mueve el mapa debajo de ella.
-    const placementPin = document.createElement("div");
-    placementPin.className = "network-map-placement-pin hidden";
-    placementPin.innerHTML = `
-      <div class="network-map-placement-marker">📍</div>
-      <div class="network-map-placement-label">Colocar NAP</div>
-    `;
-    el.appendChild(placementPin);
-    networkMap.__placementPin = placementPin;
-
-    networkMap.on("click", () => {
-      if (!pendingNetworkMapPlacement) return;
-
-      // La coordenada elegida es SIEMPRE el centro del mapa, exactamente
-      // debajo de la chincheta fija.
-      const center = networkMap.getCenter();
-      const lat = Number(center.lat.toFixed(7));
-      const lng = Number(center.lng.toFixed(7));
-      const target = pendingNetworkMapPlacement;
-      pendingNetworkMapPlacement = null;
-      setNetworkMapPlacementPin(false);
-
-      openNetworkBoxDialog(
-        target.isNew ? null : target.box,
-        { latitude: lat, longitude: lng }
-      );
-      toast("Ubicación colocada. Revisa los datos y guarda el NAP.");
+    networkMap.on("click", e => {
+      const lat = Number(e.latlng.lat.toFixed(7));
+      const lng = Number(e.latlng.lng.toFixed(7));
+      if (pendingNetworkMapPlacement) {
+        const target = pendingNetworkMapPlacement;
+        pendingNetworkMapPlacement = null;
+        openNetworkBoxDialog(target.isNew ? null : target.box, { latitude: lat, longitude: lng });
+        toast("Punto colocado en el mapa. Revisa los datos y guarda la caja.");
+      }
     });
   }
   setTimeout(() => networkMap.invalidateSize(), 80);
-  setNetworkMapPlacementPin(Boolean(pendingNetworkMapPlacement));
   renderNetworkMarkers();
-}
-
-function setNetworkMapPlacementPin(active) {
-  if (!networkMap?.__placementPin) return;
-  networkMap.__placementPin.classList.toggle("hidden", !active);
-}
-
-function startNetworkBoxMapPlacement(target = null) {
-  pendingNetworkMapPlacement = target
-    ? { isNew: false, box: target }
-    : { isNew: true, box: null };
-
-  initNetworkMap();
-
-  // Al editar, comenzamos exactamente sobre el NAP existente.
-  if (target && Number.isFinite(Number(target.latitude)) && Number.isFinite(Number(target.longitude))) {
-    networkMap.setView(
-      [Number(target.latitude), Number(target.longitude)],
-      Math.max(networkMap.getZoom(), 18),
-      { animate: true }
-    );
-  }
-
-  setNetworkMapPlacementPin(true);
-  toast("Mueve el mapa hasta colocar la chincheta sobre el NAP y toca el mapa para fijarlo.");
 }
 
 function populateNetworkLocalityControls() {
@@ -3807,8 +3812,10 @@ function openNetworkBoxDialog(box = null, coordinateOverride = null) {
 function chooseNetworkBoxLocation() {
   const boxId = $("#networkBoxId").value || "";
   const existing = boxId ? networkBoxes.find(b => b.id === boxId) : null;
+  pendingNetworkMapPlacement = existing ? { isNew: false, box: existing } : { isNew: true, box: null };
   $("#networkBoxDialog").close();
-  startNetworkBoxMapPlacement(existing);
+  initNetworkMap();
+  toast("Ahora toca el mapa exactamente donde está la caja.");
 }
 
 async function saveNetworkBox(e) {
@@ -3860,7 +3867,11 @@ async function deactivateSelectedNetworkBox() {
   if (!box) return;
   const nextStatus = box.status === "inactive" ? "active" : "inactive";
   const action = nextStatus === "inactive" ? "dar de baja" : "reactivar";
-  if (!confirm(`¿Deseas ${action} la caja «${box.name || "sin nombre"}»?\n\nLos clientes permanecerán registrados y la caja conservará su información.`)) return;
+  const confirmed = await confirmCahesa(
+    `¿Deseas ${action} la caja «${box.name || "sin nombre"}»?\n\nLos clientes permanecerán registrados y la caja conservará su información.`,
+    { title: nextStatus === "inactive" ? "Dar de baja NAP" : "Reactivar NAP", confirmText: nextStatus === "inactive" ? "Dar de baja" : "Reactivar", danger: nextStatus === "inactive" }
+  );
+  if (!confirmed) return;
   try {
     await updateDoc(doc(db, "users", currentUser.uid, "assets", id), { status: nextStatus, updatedAt: serverTimestamp() });
     toast(nextStatus === "inactive" ? "Caja dada de baja. Sus clientes siguen registrados." : "Caja reactivada.");
@@ -3880,7 +3891,11 @@ async function deleteSelectedNetworkBox() {
     toast("No se puede eliminar una caja que todavía tiene clientes conectados. Puedes darle de baja para conservar su historial.", "error");
     return;
   }
-  if (!confirm(`¿Eliminar definitivamente la caja «${box.name || "sin nombre"}»?\n\nEsta acción no se puede deshacer.`)) return;
+  const confirmed = await confirmCahesa(
+    `¿Eliminar definitivamente la caja «${box.name || "sin nombre"}»?\n\nEsta acción no se puede deshacer.`,
+    { title: "Eliminar NAP definitivamente", confirmText: "Eliminar definitivamente", danger: true }
+  );
+  if (!confirmed) return;
   try {
     await deleteDoc(doc(db, "users", currentUser.uid, "assets", id));
     if (selectedNetworkBoxId === id) selectedNetworkBoxId = "";
@@ -4072,7 +4087,11 @@ async function deleteNetworkLocality(id) {
   if (!locality) return;
   const used = networkBoxes.filter(b => normalizeText(b.locality) === normalizeText(locality.name)).length;
   if (used) return toast(`No se puede eliminar: ${used} caja(s) usan esta localidad.`, "error");
-  if (!confirm(`¿Eliminar la localidad «${locality.name}»?`)) return;
+  const confirmed = await confirmCahesa(
+    `¿Eliminar la localidad «${locality.name}»?`,
+    { title: "Eliminar localidad", confirmText: "Eliminar", danger: true }
+  );
+  if (!confirmed) return;
   try {
     await deleteDoc(doc(db, "users", currentUser.uid, "assets", id));
     toast("Localidad eliminada.");
@@ -4106,7 +4125,9 @@ async function seedNetworkExamples() {
 }
 
 $("#addNetworkBoxBtn")?.addEventListener("click", () => {
-  startNetworkBoxMapPlacement();
+  pendingNetworkMapPlacement = { isNew: true, box: null };
+  initNetworkMap();
+  toast("Toca el mapa donde está la caja y se abrirá el formulario con las coordenadas listas.");
 });
 $("#networkMapViewBtn")?.addEventListener("click", () => {
   networkMapMode = "map";
