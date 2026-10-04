@@ -143,10 +143,11 @@ const money = (n) =>
   }).format(Number(n) || 0);
 
 
-const monthKey = (d = new Date()) =>
-  `${d.getFullYear()}-${String(
-    d.getMonth() + 1
-  ).padStart(2, "0")}`;
+const monthKey = (d = new Date()) => {
+  const date = d instanceof Date ? d : dateFromIso(d) || new Date(d);
+  const safe = Number.isNaN(date?.getTime?.()) ? new Date() : date;
+  return `${safe.getFullYear()}-${String(safe.getMonth() + 1).padStart(2, "0")}`;
+};
 
 
 const dateFromIso = (value) => {
@@ -2342,9 +2343,40 @@ function openClientHistoryDialog(clientId){
   $("#clientHistoryDialog").showModal();
 }
 function receiptHtml(p){return `<div class="receipt"><div class="receipt-brand">CAHESA</div><div class="receipt-title">COMPROBANTE DE PAGO</div><div class="receipt-line"><span>Cliente</span><strong>${escapeHtml(p.clientName||"—")}</strong></div><div class="receipt-line"><span>Periodo</span><strong>${escapeHtml(monthLabel(p.month||""))}</strong></div><div class="receipt-line"><span>Fecha de pago</span><strong>${escapeHtml(p.paidDate||"—")}</strong></div><div class="receipt-line"><span>Método</span><strong>${escapeHtml(p.method||"Efectivo")}</strong></div><div class="receipt-total"><span>Total pagado</span><strong>${money(p.amount)}</strong></div><div class="receipt-line"><span>Folio</span><strong>${escapeHtml(p.receiptNumber||p.id||"—")}</strong></div>${p.nextDueDate?`<div class="receipt-line"><span>Próximo vencimiento</span><strong>${escapeHtml(p.nextDueDate)}</strong></div>`:""}${p.note?`<div class="receipt-note">${escapeHtml(p.note)}</div>`:""}<div class="receipt-ok">✓ PAGO REGISTRADO</div><small>Comprobante generado por CAHESA</small></div>`}
-function openReceiptDialog(p){const d=$("#receiptDialog");if(!d)return;d.dataset.receiptText=`CAHESA\nCOMPROBANTE DE PAGO\nCliente: ${p.clientName}\nFecha: ${p.paidDate}\nMonto: ${money(p.amount)}\nMétodo: ${p.method||"Efectivo"}\nFolio: ${p.receiptNumber||p.id}`;$("#receiptContent").innerHTML=receiptHtml(p);d.showModal()}
+function receiptShareText(p){return `CAHESA\nCOMPROBANTE DE PAGO\nCliente: ${p.clientName||"—"}\nPeriodo: ${monthLabel(p.month||"")}\nFecha de pago: ${p.paidDate||"—"}\nMonto: ${money(p.amount)}\nMétodo: ${p.method||"Efectivo"}\nFolio: ${p.receiptNumber||p.id||"—"}`;}
+function drawReceiptCanvas(p){
+  const canvas=document.createElement("canvas");
+  const scale=2, width=900, height=1180; canvas.width=width*scale; canvas.height=height*scale;
+  const ctx=canvas.getContext("2d"); ctx.scale(scale,scale);
+  ctx.fillStyle="#f5f7fb"; ctx.fillRect(0,0,width,height);
+  const x=70,y=45,w=760,h=1090;
+  ctx.fillStyle="#ffffff"; ctx.fillRect(x,y,w,h);
+  ctx.strokeStyle="#e2e8f0"; ctx.lineWidth=2; ctx.strokeRect(x,y,w,h);
+  ctx.fillStyle="#0f172a"; ctx.fillRect(x,y,w,150);
+  ctx.fillStyle="#ffffff"; ctx.font="800 44px Arial"; ctx.textAlign="center"; ctx.fillText("CAHESA",width/2,y+62);
+  ctx.font="700 25px Arial"; ctx.fillText("COMPROBANTE DE PAGO",width/2,y+108);
+  ctx.textAlign="left";
+  let cy=y+205;
+  const line=(label,value,big=false)=>{ctx.fillStyle="#64748b";ctx.font="600 21px Arial";ctx.fillText(label,x+45,cy);ctx.fillStyle="#172033";ctx.font=`${big?"800 32":"700 24"}px Arial`;ctx.textAlign="right";ctx.fillText(String(value||"—"),x+w-45,cy);ctx.textAlign="left";cy+=58;ctx.strokeStyle="#edf0f4";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x+45,cy-25);ctx.lineTo(x+w-45,cy-25);ctx.stroke();};
+  line("Cliente",p.clientName||"—");
+  line("Periodo",monthLabel(p.month||""));
+  line("Fecha de pago",p.paidDate||"—");
+  line("Método",p.method||"Efectivo");
+  line("Folio",p.receiptNumber||p.id||"—");
+  if(p.nextDueDate) line("Próximo vencimiento",p.nextDueDate);
+  cy+=20; ctx.fillStyle="#eef2f7";ctx.fillRect(x+35,cy-35,w-70,105);
+  ctx.fillStyle="#64748b";ctx.font="700 21px Arial";ctx.fillText("TOTAL PAGADO",x+60,cy+5);
+  ctx.fillStyle="#0f172a";ctx.font="900 42px Arial";ctx.textAlign="right";ctx.fillText(money(p.amount),x+w-60,cy+10);ctx.textAlign="left";
+  cy+=125; ctx.fillStyle="#15803d";ctx.font="900 26px Arial";ctx.textAlign="center";ctx.fillText("✓ PAGO REGISTRADO",width/2,cy);
+  ctx.fillStyle="#64748b";ctx.font="18px Arial";ctx.fillText("Comprobante generado por CAHESA",width/2,cy+48);
+  if(p.note){ctx.fillStyle="#475569";ctx.font="18px Arial";ctx.fillText(String(p.note).slice(0,80),width/2,cy+82);}
+  return canvas;
+}
+function receiptCanvasFile(p){return new Promise((resolve,reject)=>{try{drawReceiptCanvas(p).toBlob(blob=>blob?resolve(new File([blob],`ticket-cahesa-${p.receiptNumber||p.id||"pago"}.png`,{type:"image/png"})):reject(new Error("No se pudo generar la imagen.")),"image/png",1)}catch(e){reject(e)}})}
+function openReceiptDialog(p){const d=$("#receiptDialog");if(!d)return;d.dataset.receiptText=receiptShareText(p);d.dataset.receiptJson=JSON.stringify(p);$("#receiptContent").innerHTML=receiptHtml(p);const img=$("#receiptImagePreview");if(img){img.src=drawReceiptCanvas(p).toDataURL("image/png");img.alt=`Comprobante ${p.receiptNumber||p.id||"CAHESA"}`;}d.showModal()}
 function printReceipt(){const content=$("#receiptContent")?.innerHTML||"",w=window.open("","_blank","width=480,height=760");if(!w){toast("El navegador bloqueó la ventana de impresión.","error");return}w.document.write(`<html><head><title>Comprobante CAHESA</title><style>body{font-family:Arial;padding:20px}.receipt{max-width:380px;margin:auto;border:1px solid #ddd;border-radius:16px;padding:22px}.receipt-line,.receipt-total{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #eee}.receipt-total{font-size:20px}.receipt-ok{text-align:center;font-weight:800;margin:18px 0}</style></head><body>${content}</body></html>`);w.document.close();setTimeout(()=>w.print(),150)}
-async function shareReceipt(){const text=$("#receiptDialog")?.dataset.receiptText||"";if(!text)return;if(navigator.share){try{await navigator.share({title:"Comprobante CAHESA",text});return}catch(e){if(e?.name==="AbortError")return}}try{await navigator.clipboard.writeText(text);toast("Comprobante copiado. Puedes pegarlo en WhatsApp.")}catch(e){toast("No fue posible compartir el comprobante.","error")}}
+async function shareReceiptImage(){const raw=$("#receiptDialog")?.dataset.receiptJson||"";if(!raw)return;try{const p=JSON.parse(raw),file=await receiptCanvasFile(p);if(navigator.canShare?.({files:[file]})&&navigator.share){await navigator.share({title:"Comprobante CAHESA",text:"Comprobante de pago",files:[file]});return}const url=URL.createObjectURL(file);const a=document.createElement("a");a.href=url;a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);toast("Imagen del comprobante guardada. Puedes compartirla en WhatsApp.")}catch(e){if(e?.name!=="AbortError")toast("No fue posible compartir la imagen del comprobante.","error")}}
+async function downloadReceiptImage(){const raw=$("#receiptDialog")?.dataset.receiptJson||"";if(!raw)return;try{const p=JSON.parse(raw),file=await receiptCanvasFile(p),url=URL.createObjectURL(file),a=document.createElement("a");a.href=url;a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);toast("Ticket guardado como imagen.")}catch(e){toast("No fue posible guardar el ticket.","error")}}
 
 function openPaymentDialog(id) {
 
@@ -2693,7 +2725,7 @@ async function clearCahesaDemoData(){
 }
 $("#seedCahesaDemoBtn")?.addEventListener("click",async()=>{try{showLoading(true);await seedCahesaDemoData()}catch(e){toast(friendlyError(e),"error")}finally{showLoading(false)}});
 $("#clearCahesaDemoBtn")?.addEventListener("click",async()=>{try{showLoading(true);await clearCahesaDemoData()}catch(e){toast(friendlyError(e),"error")}finally{showLoading(false)}});
-$("#printReceiptBtn")?.addEventListener("click",printReceipt);$("#shareReceiptBtn")?.addEventListener("click",shareReceipt);
+$("#printReceiptBtn")?.addEventListener("click",printReceipt);$("#shareReceiptBtn")?.addEventListener("click",shareReceiptImage);$("#downloadReceiptImageBtn")?.addEventListener("click",downloadReceiptImage);
 $("#clientHistoryList")?.addEventListener("click",e=>{const b=e.target.closest("[data-open-receipt]");if(b){try{openReceiptDialog(JSON.parse(b.dataset.openReceipt))}catch(_){}}});
 $("#orphanHistoryList")?.addEventListener("click",async e=>{const b=e.target.closest("[data-delete-history]");if(!b)return;const ok=await confirmCahesa("¿Eliminar definitivamente este registro de pago?",{title:"Eliminar historial",confirmText:"Eliminar",danger:true});if(!ok)return;try{await deleteDoc(doc(db,"users",currentUser.uid,"payments",b.dataset.deleteHistory));toast("Historial eliminado.")}catch(err){toast(friendlyError(err),"error")}});
 $("#deleteAllOrphanHistoryBtn")?.addEventListener("click",async()=>{const orphan=payments.filter(p=>!clients.some(c=>c.id===p.clientId));if(!orphan.length){toast("No hay historiales conservados.");return}const ok=await confirmCahesa(`Se eliminarán ${orphan.length} pagos de clientes eliminados.`,{title:"Eliminar historiales",confirmText:"Eliminar todos",danger:true});if(!ok)return;const b=writeBatch(db);orphan.forEach(p=>b.delete(doc(db,"users",currentUser.uid,"payments",p.id)));await b.commit();toast("Historiales eliminados.")});
@@ -3997,6 +4029,22 @@ $("#clientNetworkBox")?.addEventListener("change", e => {
   port.max = Number(box.capacity || 0);
   port.placeholder = `1 a ${Number(box.capacity || 0)}`;
 });
+
+const viewModeToggle = $("#viewModeToggle");
+function applyViewMode(mode){
+  const desktop = mode === "desktop";
+  document.body.classList.toggle("desktop-view", desktop);
+  if(viewModeToggle){
+    viewModeToggle.textContent = desktop ? "▣ Vista celular" : "▣ Escritorio";
+    viewModeToggle.title = desktop ? "Volver a vista celular" : "Cambiar a vista escritorio";
+  }
+  try{localStorage.setItem("cahesaViewMode", desktop ? "desktop" : "mobile")}catch(_){}
+  setTimeout(()=>{
+    if(typeof networkMap?.invalidateSize === "function") networkMap.invalidateSize();
+  },80);
+}
+viewModeToggle?.addEventListener("click",()=>applyViewMode(document.body.classList.contains("desktop-view") ? "mobile" : "desktop"));
+try{applyViewMode(localStorage.getItem("cahesaViewMode") === "desktop" ? "desktop" : "mobile")}catch(_){applyViewMode("mobile")}
 
 const _goSectionOriginal = goSection;
 goSection = function(name) {
