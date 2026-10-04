@@ -2345,37 +2345,67 @@ function openClientHistoryDialog(clientId){
 function receiptHtml(p){return `<div class="receipt"><div class="receipt-brand">CAHESA</div><div class="receipt-title">COMPROBANTE DE PAGO</div><div class="receipt-line"><span>Cliente</span><strong>${escapeHtml(p.clientName||"—")}</strong></div><div class="receipt-line"><span>Periodo</span><strong>${escapeHtml(monthLabel(p.month||""))}</strong></div><div class="receipt-line"><span>Fecha de pago</span><strong>${escapeHtml(p.paidDate||"—")}</strong></div><div class="receipt-line"><span>Método</span><strong>${escapeHtml(p.method||"Efectivo")}</strong></div><div class="receipt-total"><span>Total pagado</span><strong>${money(p.amount)}</strong></div>${p.nextDueDate?`<div class="receipt-line"><span>Próximo vencimiento</span><strong>${escapeHtml(p.nextDueDate)}</strong></div>`:""}${p.note?`<div class="receipt-note">${escapeHtml(p.note)}</div>`:""}<div class="receipt-ok">✓ PAGO REGISTRADO</div><small>Comprobante generado por CAHESA</small></div>`}
 function receiptShareText(p){return `CAHESA\nCOMPROBANTE DE PAGO\nCliente: ${p.clientName||"—"}\nPeriodo: ${monthLabel(p.month||"")}\nFecha de pago: ${p.paidDate||"—"}\nMonto: ${money(p.amount)}\nMétodo: ${p.method||"Efectivo"}`;}
 async function receiptDomToCanvas(p){
-  const source=document.querySelector("#receiptContent .receipt");
-  if(!source) throw new Error("No se encontró el comprobante.");
-  const clone=source.cloneNode(true);
-  const width=Math.max(360,Math.ceil(source.getBoundingClientRect().width||430));
-  const sourceHeight=Math.max(1,Math.ceil(source.getBoundingClientRect().height||520));
-  const all=[source,...source.querySelectorAll("*")];
-  const clones=[clone,...clone.querySelectorAll("*")];
-  for(let i=0;i<all.length;i++){
-    const cs=getComputedStyle(all[i]);
-    let css="";
-    for(let j=0;j<cs.length;j++){const prop=cs[j];css+=`${prop}:${cs.getPropertyValue(prop)};`;}
-    clones[i].setAttribute("style",css);
+  // Generamos el ticket directamente con Canvas. Esto evita foreignObject/SVG,
+  // que en algunos navegadores Android falla al convertir HTML a imagen.
+  const scale=3;
+  const width=900;
+  const pad=88;
+  const inner=width-pad*2;
+  const rows=[];
+  rows.push(["Cliente", p.clientName||"—"]);
+  rows.push(["Periodo", monthLabel(p.month||"")]);
+  rows.push(["Fecha de pago", p.paidDate||"—"]);
+  rows.push(["Método", p.method||"Efectivo"]);
+  if(p.nextDueDate) rows.push(["Próximo vencimiento", p.nextDueDate]);
+
+  const height=1080 + (p.nextDueDate ? 74 : 0) + (p.note ? 70 : 0);
+  const canvas=document.createElement("canvas");
+  canvas.width=width*scale;
+  canvas.height=height*scale;
+  const ctx=canvas.getContext("2d");
+  if(!ctx) throw new Error("No se pudo crear el lienzo del comprobante.");
+  ctx.scale(scale,scale);
+  ctx.fillStyle="#ffffff";
+  ctx.fillRect(0,0,width,height);
+
+  const roundRect=(x,y,w,h,r,fill,stroke)=>{
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
+    if(fill){ctx.fillStyle=fill;ctx.fill();}
+    if(stroke){ctx.strokeStyle=stroke;ctx.stroke();}
+  };
+  const text=(value,x,y,size,weight="400",color="#111827",align="left")=>{
+    ctx.font=`${weight} ${size}px Arial, sans-serif`;
+    ctx.fillStyle=color;ctx.textAlign=align;ctx.textBaseline="middle";
+    ctx.fillText(String(value),x,y);
+  };
+  const line=(y)=>{ctx.strokeStyle="#e5e7eb";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(width-pad,y);ctx.stroke();};
+
+  roundRect(24,24,width-48,height-48,28,"#ffffff","#e5e7eb");
+  text("CAHESA",width/2,105,54,"800","#000000","center");
+  text("COMPROBANTE DE PAGO",width/2,155,24,"500","#64748b","center");
+
+  let y=220;
+  for(const [label,value] of rows){
+    text(label,pad,y,28,"400","#111827","left");
+    text(value,width-pad,y,28,"800","#111827","right");
+    y+=74; line(y-34);
   }
-  clone.style.boxSizing="border-box";
-  clone.style.width=`${width}px`;
-  clone.style.margin="0";
-  clone.style.maxWidth="none";
-  clone.style.background="#fff";
-  const svg=`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${sourceHeight}" viewBox="0 0 ${width} ${sourceHeight}"><foreignObject x="0" y="0" width="${width}" height="${sourceHeight}"><div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${sourceHeight}px;background:#fff;">${clone.outerHTML}</div></foreignObject></svg>`;
-  const blob=new Blob([svg],{type:"image/svg+xml;charset=utf-8"});
-  const url=URL.createObjectURL(blob);
-  try{
-    const img=await new Promise((resolve,reject)=>{const i=new Image();i.onload=()=>resolve(i);i.onerror=()=>reject(new Error("No se pudo preparar la imagen."));i.src=url;});
-    const scale=Math.min(3,Math.max(2,window.devicePixelRatio||2));
-    const canvas=document.createElement("canvas");
-    canvas.width=width*scale;canvas.height=sourceHeight*scale;
-    const ctx=canvas.getContext("2d");
-    ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.setTransform(scale,0,0,scale,0,0);ctx.drawImage(img,0,0,width,sourceHeight);
-    return canvas;
-  }finally{URL.revokeObjectURL(url);}
+
+  y+=10;
+  text("Total pagado",pad,y,30,"400","#111827","left");
+  text(money(p.amount),width-pad,y,38,"800","#111827","right");
+  y+=76; line(y-38);
+
+  if(p.note){
+    text(p.note,pad,y,22,"400","#64748b","left");
+    y+=58;
+  }
+
+  text("✓ PAGO REGISTRADO",width/2,y+35,30,"800","#111827","center");
+  text("Comprobante generado por CAHESA",width/2,y+88,22,"400","#64748b","center");
+  return canvas;
 }
 function receiptCanvasFile(p){return receiptDomToCanvas(p).then(canvas=>new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(new File([blob],`ticket-cahesa-${p.paidDate||"pago"}.png`,{type:"image/png"})):reject(new Error("No se pudo generar la imagen.")),"image/png",1)));}
 async function openReceiptDialog(p){
