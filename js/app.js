@@ -2378,10 +2378,67 @@ async function receiptDomToCanvas(p){
   }finally{URL.revokeObjectURL(url);}
 }
 function receiptCanvasFile(p){return receiptDomToCanvas(p).then(canvas=>new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(new File([blob],`ticket-cahesa-${p.paidDate||"pago"}.png`,{type:"image/png"})):reject(new Error("No se pudo generar la imagen.")),"image/png",1)));}
-async function openReceiptDialog(p){const d=$("#receiptDialog");if(!d)return;d.dataset.receiptText=receiptShareText(p);d.dataset.receiptJson=JSON.stringify(p);$("#receiptContent").innerHTML=receiptHtml(p);d.showModal();const img=$("#receiptImagePreview");if(img){try{const canvas=await receiptDomToCanvas(p);img.src=canvas.toDataURL("image/png");img.alt="Comprobante de pago CAHESA";}catch(e){img.removeAttribute("src");}}}
+async function openReceiptDialog(p){
+  const d=$("#receiptDialog");
+  if(!d)return;
+  d.dataset.receiptText=receiptShareText(p);
+  d.dataset.receiptJson=JSON.stringify(p);
+  d._receiptFile=null;
+  $("#receiptContent").innerHTML=receiptHtml(p);
+  d.showModal();
+  const shareBtn=$("#shareReceiptBtn");
+  const downloadBtn=$("#downloadReceiptImageBtn");
+  shareBtn?.setAttribute("disabled","disabled");
+  downloadBtn?.setAttribute("disabled","disabled");
+  try{
+    d._receiptFile=await receiptCanvasFile(p);
+    shareBtn?.removeAttribute("disabled");
+    downloadBtn?.removeAttribute("disabled");
+  }catch(e){
+    console.error("CAHESA: no se pudo preparar el ticket como imagen",e);
+    toast("No se pudo preparar el ticket como imagen.","error");
+  }
+}
 function printReceipt(){const content=$("#receiptContent")?.innerHTML||"",w=window.open("","_blank","width=480,height=760");if(!w){toast("El navegador bloqueó la ventana de impresión.","error");return}w.document.write(`<html><head><title>Comprobante CAHESA</title><style>body{font-family:Arial;padding:20px}.receipt{max-width:380px;margin:auto;border:1px solid #ddd;border-radius:16px;padding:22px}.receipt-line,.receipt-total{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #eee}.receipt-total{font-size:20px}.receipt-ok{text-align:center;font-weight:800;margin:18px 0}</style></head><body>${content}</body></html>`);w.document.close();setTimeout(()=>w.print(),150)}
-async function shareReceiptImage(){const raw=$("#receiptDialog")?.dataset.receiptJson||"";if(!raw)return;try{const p=JSON.parse(raw),file=await receiptCanvasFile(p);if(navigator.canShare?.({files:[file]})&&navigator.share){await navigator.share({title:"Comprobante CAHESA",text:"Comprobante de pago",files:[file]});return}const url=URL.createObjectURL(file);const a=document.createElement("a");a.href=url;a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);toast("Imagen del comprobante guardada. Puedes compartirla en WhatsApp.")}catch(e){if(e?.name!=="AbortError")toast("No fue posible compartir la imagen del comprobante.","error")}}
-async function downloadReceiptImage(){const raw=$("#receiptDialog")?.dataset.receiptJson||"";if(!raw)return;try{const p=JSON.parse(raw),file=await receiptCanvasFile(p),url=URL.createObjectURL(file),a=document.createElement("a");a.href=url;a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);toast("Ticket guardado como imagen.")}catch(e){toast("No fue posible guardar el ticket.","error")}}
+async function shareReceiptImage(){
+  const d=$("#receiptDialog");
+  const file=d?._receiptFile;
+  if(!file){toast("El ticket todavía se está preparando.","error");return;}
+  try{
+    if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
+      // Importante: no hacemos ningún await antes de navigator.share().
+      // Android/Chrome puede perder el gesto del usuario si esperamos aquí.
+      await navigator.share({title:"Comprobante CAHESA",files:[file]});
+      return;
+    }
+    const url=URL.createObjectURL(file);
+    const a=document.createElement("a");
+    a.href=url;a.download=file.name;
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+    toast("Imagen del comprobante guardada. Puedes compartirla en WhatsApp.");
+  }catch(e){
+    if(e?.name==="AbortError")return;
+    console.error("CAHESA: error al compartir ticket",e);
+    toast("No fue posible abrir el menú para compartir el ticket.","error");
+  }
+}
+async function downloadReceiptImage(){
+  const d=$("#receiptDialog");
+  const file=d?._receiptFile;
+  if(!file){toast("El ticket todavía se está preparando.","error");return;}
+  try{
+    const url=URL.createObjectURL(file);
+    const a=document.createElement("a");
+    a.href=url;a.download=file.name;
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+    toast("Ticket guardado como imagen.");
+  }catch(e){
+    console.error("CAHESA: error al guardar ticket",e);
+    toast("No fue posible guardar el ticket.","error");
+  }
+}
 
 function openPaymentDialog(id) {
 
