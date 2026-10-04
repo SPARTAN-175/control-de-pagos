@@ -176,6 +176,23 @@ const timestampDate = (value) => {
 };
 
 
+function getPaymentDay(client) {
+  const n = Number(client?.paymentDay);
+  if (Number.isInteger(n) && n >= 1 && n <= 31) return n;
+  const d = dateFromIso(effectiveDueDate(client) || client?.dueDate);
+  return d ? d.getDate() : new Date().getDate();
+}
+function nextDueForPaymentDay(day, fromDate = new Date()) {
+  const n = Math.min(31, Math.max(1, Number(day) || fromDate.getDate()));
+  const next = new Date(fromDate.getFullYear(), fromDate.getMonth()+1, 1);
+  const last = new Date(next.getFullYear(), next.getMonth()+1, 0).getDate();
+  return isoDate(new Date(next.getFullYear(), next.getMonth(), Math.min(n,last)));
+}
+function networkBoxLabel(id) {
+  const b = networkBoxes.find(x => x.id === id);
+  return b ? (b.code || b.name || id) : (id || "");
+}
+
 function effectiveDueDate(client) {
   // Regla de negocio: después de un pago, el siguiente vencimiento
   // siempre es la misma fecha del mes siguiente.
@@ -304,33 +321,16 @@ function csvToObjects(text) {
   });
 }
 
-const CLIENT_CSV_HEADERS = [
-  "ID",
-  "Nombre",
-  "Teléfono",
-  "Referencia",
-  "Dirección",
-  "Servicio",
-  "Mensualidad",
-  "Fecha de pago",
-  "Estado",
-  "Notas",
-  "Foto"
-];
+const CLIENT_CSV_HEADERS = ["ID","Nombre","Teléfono","Correo","PPPoE","Dirección","Servicio","Plan (Mbps)","Mensualidad","Fecha de alta","Día de pago","Próximo vencimiento","Estado","NAP","Puerto","Latitud","Longitud","Tipo de equipo","Marca / modelo","Número de serie","MAC","IP del equipo","SSID / Wi-Fi","Notas"];
 
 function clientToCsvRow(c) {
   return [
-    c.id || "",
-    c.name || "",
-    c.phone || "",
-    c.reference || "",
-    c.address || "",
-    c.service || "Internet",
-    Number(c.amount) || 0,
-    c.dueDate || "",
-    c.currentPaymentStatus || "pending",
-    c.notes || "",
-    c.photoName || ""
+    c.id||"",c.name||"",c.phone||"",c.email||"",c.pppoe||c.reference||"",c.address||"",
+    c.service||"Internet",c.planMbps??"",Number(c.amount)||0,c.serviceStartDate||"",
+    getPaymentDay(c),effectiveDueDate(c)||c.dueDate||"",c.currentPaymentStatus||"pending",
+    networkBoxLabel(c.networkBoxId),c.networkPort??"",c.latitude??"",c.longitude??"",
+    c.equipmentType||"",c.equipmentModel||"",c.equipmentSerial||"",c.equipmentMac||"",
+    c.equipmentIp||"",c.equipmentSsid||"",c.notes||""
   ].map(csvEscape).join(",");
 }
 
@@ -560,125 +560,27 @@ function exportPaymentsCsv() {
   );
 }
 
-async function importClientsCsv(file) {
-  if (!currentUser) throw new Error("Tu sesión no está activa.");
-
-  const text = await file.text();
-  const rows = csvToObjects(text);
-
-  if (!rows.length) {
-    throw new Error("El archivo no contiene registros.");
-  }
-
-  const normalizedRows = rows.map(row => ({
-    id: row.id?.trim() || "",
-    name: row.nombre?.trim() || "",
-    phone: row.telefono?.trim() || "",
-    reference: row.referencia?.trim() || "",
-    address: row.direccion?.trim() || "",
-    service: row.servicio?.trim() || "Internet",
-    amount: Number(String(row.mensualidad || "0").replace(/[$,\s]/g, "")) || 0,
-    dueDate: row.fechadepago?.trim() || isoDate(),
-    currentPaymentStatus:
-      ["paid", "pagado"].includes((row.estado || "").trim().toLowerCase())
-        ? "paid"
-        : "pending",
-    notes: row.notas?.trim() || "",
-    photoName: row.foto?.trim() || ""
-  })).filter(row => row.name);
-
-  if (!normalizedRows.length) {
-    throw new Error("No encontré filas con nombre de cliente.");
-  }
-
-  let created = 0;
-  let updated = 0;
-
-  for (let start = 0; start < normalizedRows.length; start += 450) {
-    const chunk = normalizedRows.slice(start, start + 450);
-    const batch = writeBatch(db);
-
-    for (const row of chunk) {
-      let existing = null;
-
-      if (row.id) {
-        existing = clients.find(c => c.id === row.id) || null;
-      }
-
-      if (!existing) {
-        const normalizedName = normalizeText(row.name);
-        existing = clients.find(c =>
-          normalizeText(c.name) === normalizedName
-        ) || null;
-      }
-
-      const clientRef = existing
-        ? doc(db, "users", currentUser.uid, "clients", existing.id)
-        : doc(collection(db, "users", currentUser.uid, "clients"));
-
-      const data = {
-        name: row.name,
-        phone: row.phone,
-        reference: row.reference,
-        address: row.address,
-        service: row.service,
-        amount: row.amount,
-        dueDate: row.dueDate,
-        currentPaymentStatus: row.currentPaymentStatus,
-        notes: row.notes,
-        active: existing?.active !== false,
-        updatedAt: serverTimestamp()
-      };
-
-      if (row.photoName) {
-        const existingPhoto = existing?.photoURL || "";
-        if (existingPhoto) {
-          data.photoURL = existingPhoto;
-          data.photoName = row.photoName;
-        } else {
-          const assetId =
-            normalizeText(row.photoName);
-
-          if (assetId) {
-            try {
-              const assetSnap = await getDoc(
-                doc(
-                  db,
-                  "users",
-                  currentUser.uid,
-                  "assets",
-                  assetId
-                )
-              );
-
-              if (assetSnap.exists()) {
-                data.photoURL = assetSnap.data().url || "";
-                data.photoName = row.photoName;
-              }
-            } catch (assetErr) {
-              console.warn("No se pudo resolver la foto importada:", assetErr);
-            }
-          }
-        }
-      }
-
-      if (!existing) {
-        data.createdAt = serverTimestamp();
-        created++;
-      } else {
-        updated++;
-      }
-
-      batch.set(clientRef, data, { merge: true });
-    }
-
-    await batch.commit();
-  }
-
-  toast(`Importación terminada: ${created} nuevos, ${updated} actualizados.`);
+async function importClientsCsv(file){
+  if(!currentUser)throw new Error("Tu sesión no está activa.");
+  const ext=String(file.name||"").toLowerCase().split(".").pop(); let rows=[];
+  if(ext==="xlsx"||ext==="xls"){const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:""}).map(r=>Object.fromEntries(Object.entries(r).map(([k,v])=>[normalizeText(k),String(v??"")])))}else rows=csvToObjects(await file.text());
+  if(!rows.length)throw new Error("El archivo no contiene registros.");
+  const normalized=rows.map(r=>({id:r.id?.trim()||"",name:r.nombre?.trim()||"",phone:r.telefono?.trim()||"",email:r.correo?.trim()||"",pppoe:r.pppoe?.trim()||"",address:r.direccion?.trim()||"",service:r.servicio?.trim()||"Internet",planMbps:Number(String(r.planmbps||"").replace(/[^0-9.]/g,""))||null,amount:Number(String(r.mensualidad||"0").replace(/[$,\s]/g,""))||0,serviceStartDate:r.fechadealta?.trim()||isoDate(),paymentDay:Math.min(31,Math.max(1,Number(r.díadepago||r.diadepago||1)||1)),dueDate:r.proximovencimiento?.trim()||"",currentPaymentStatus:["paid","pagado"].includes((r.estado||"").trim().toLowerCase())?"paid":"pending",nap:r.nap?.trim()||"",networkPort:Number(r.puerto)||null,latitude:r.latitud===""?null:Number(r.latitud),longitude:r.longitud===""?null:Number(r.longitud),equipmentType:r.tipodeequipo?.trim()||"ONU",equipmentModel:r.marcamodelo?.trim()||"",equipmentSerial:r.númerodeserie?.trim()||r.numerodeserie?.trim()||"",equipmentMac:r.mac?.trim()||"",equipmentIp:r.ipdelequipo?.trim()||"",equipmentSsid:r.ssidwifi?.trim()||"",notes:r.notas?.trim()||""})).filter(r=>r.name);
+  if(!normalized.length)throw new Error("No encontré filas con nombre de cliente.");
+  let created=0,updated=0;
+  for(let start=0;start<normalized.length;start+=450){
+    const batch=writeBatch(db);
+    for(const r of normalized.slice(start,start+450)){
+      let existing=r.id?clients.find(c=>c.id===r.id):null;if(!existing)existing=clients.find(c=>normalizeText(c.name)===normalizeText(r.name))||null;
+      let boxId=existing?.networkBoxId||"";if(r.nap){const b=networkBoxes.find(x=>x.id===r.nap||normalizeText(x.code||"")===normalizeText(r.nap)||normalizeText(x.name||"")===normalizeText(r.nap));if(!b)throw new Error(`No encontré el NAP "${r.nap}" para "${r.name}".`);boxId=b.id}
+      const refDoc=existing?doc(db,"users",currentUser.uid,"clients",existing.id):doc(collection(db,"users",currentUser.uid,"clients"));
+      const data={name:r.name,phone:r.phone,email:r.email,pppoe:r.pppoe,reference:existing?.reference||"",address:r.address,service:r.service,planMbps:r.planMbps,amount:r.amount,serviceStartDate:r.serviceStartDate,paymentDay:r.paymentDay,dueDate:r.dueDate||nextDueForPaymentDay(r.paymentDay,new Date()),currentPaymentStatus:r.currentPaymentStatus,networkBoxId:boxId,networkPort:r.networkPort,latitude:Number.isFinite(r.latitude)?r.latitude:null,longitude:Number.isFinite(r.longitude)?r.longitude:null,equipmentType:r.equipmentType,equipmentModel:r.equipmentModel,equipmentSerial:r.equipmentSerial,equipmentMac:r.equipmentMac,equipmentIp:r.equipmentIp,equipmentSsid:r.equipmentSsid,notes:r.notes,active:existing?.active!==false,updatedAt:serverTimestamp()};
+      if(!existing){data.createdAt=serverTimestamp();created++}else updated++;batch.set(refDoc,data,{merge:true});
+    }await batch.commit();
+  }toast(`Importación terminada: ${created} nuevos, ${updated} actualizados.`);
 }
-
-
+function exportClientsExcel(){const rows=clients.map(c=>({"ID":c.id||"","Nombre":c.name||"","Teléfono":c.phone||"","Correo":c.email||"","PPPoE":c.pppoe||c.reference||"","Dirección":c.address||"","Servicio":c.service||"Internet","Plan (Mbps)":c.planMbps??"","Mensualidad":Number(c.amount)||0,"Fecha de alta":c.serviceStartDate||"","Día de pago":getPaymentDay(c),"Próximo vencimiento":effectiveDueDate(c)||c.dueDate||"","Estado":c.currentPaymentStatus||"pending","NAP":networkBoxLabel(c.networkBoxId),"Puerto":c.networkPort??"","Latitud":c.latitude??"","Longitud":c.longitude??"","Tipo de equipo":c.equipmentType||"","Marca / modelo":c.equipmentModel||"","Número de serie":c.equipmentSerial||"","MAC":c.equipmentMac||"","IP del equipo":c.equipmentIp||"","SSID / Wi-Fi":c.equipmentSsid||"","Notas":c.notes||""}));const ws=XLSX.utils.json_to_sheet(rows.length?rows:[{}]);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Clientes");XLSX.writeFile(wb,`clientes-cahesa-${isoDate()}.xlsx`)}
+function downloadClientTemplateExcel(){const ws=XLSX.utils.aoa_to_sheet([CLIENT_CSV_HEADERS]);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Clientes");XLSX.writeFile(wb,"plantilla-clientes-cahesa.xlsx")}
 
 /* =========================================================
    UI
@@ -1718,141 +1620,29 @@ function clientRowHtml(c) {
 ========================================================= */
 
 function renderClients() {
-
-  const q =
-    ($("#clientSearch")?.value || "")
-      .toLowerCase()
-      .trim();
-
-
-  const f =
-    $("#clientFilter")?.value ||
-    "all";
-
-
-  const arr =
-    clients.filter(
-      c =>
-        (
-          !q ||
-          `${c.name} ${
-            c.phone || ""
-          } ${
-            c.reference || ""
-          }`
-            .toLowerCase()
-            .includes(q)
-        )
-        &&
-        (
-          f === "all" ||
-          clientStatus(c) === f
-        )
-    );
-
-
-  $("#clientsGrid").className =
-    arr.length
-      ? "clients-grid"
-      : "clients-grid empty-state";
-
-
-  $("#clientsGrid").innerHTML =
-    arr.length
-      ? arr.map(c => `
-
-        <article class="client-card">
-
-          <div class="client-cover">
-
-            <img
-              src="${escapeHtml(
-                c.photoURL ||
-                "img/perfil.jpg"
-              )}"
-              alt=""
-            >
-
-            <span
-              class="badge ${clientStatus(c)}"
-            >
-              ${statusLabel(
-                clientStatus(c)
-              )}
-            </span>
-
-          </div>
-
-
-          <div class="client-body">
-
-            <h3>
-              ${escapeHtml(c.name)}
-            </h3>
-
-            <p>
-              ${escapeHtml(
-                c.service || "Internet"
-              )}
-              ·
-              ${money(c.amount)}/mes
-            </p>
-
-
-            <div class="client-meta">
-
-              <span>
-                📅
-                ${escapeHtml(
-                  effectiveDueDate(c) || "—"
-                )}
-              </span>
-
-              <span>
-                ☎
-                ${escapeHtml(
-                  c.phone ||
-                  "Sin teléfono"
-                )}
-              </span>
-
-            </div>
-
-
-            <div class="card-actions">
-
-              <button
-                class="ghost"
-                data-edit="${escapeHtml(c.id)}"
-              >
-                Editar
-              </button>
-
-              <button
-                class="danger-button small"
-                data-delete-client="${escapeHtml(c.id)}"
-              >
-                Eliminar
-              </button>
-
-              <button
-                class="primary"
-                data-pay="${escapeHtml(c.id)}"
-              >
-                Registrar pago
-              </button>
-
-            </div>
-
-          </div>
-
-        </article>
-
-      `).join("")
-      : "No hay clientes que coincidan con el filtro.";
-
+  const q=($("#clientSearch")?.value||"").toLowerCase().trim(), f=$("#clientFilter")?.value||"all";
+  const arr=clients.filter(c=>(!q||`${c.name} ${c.phone||""} ${c.pppoe||c.reference||""}`.toLowerCase().includes(q))&&(f==="all"||clientStatus(c)===f));
+  $("#clientsGrid").className=arr.length?"clients-grid":"clients-grid empty-state";
+  $("#clientsGrid").innerHTML=arr.length?arr.map(c=>`
+    <article class="client-card">
+      <div class="client-cover"><img src="${escapeHtml(c.photoURL||"img/perfil.jpg")}" alt=""><span class="badge ${clientStatus(c)}">${statusLabel(clientStatus(c))}</span></div>
+      <div class="client-body">
+        <h3>${escapeHtml(c.name)}</h3><p>${escapeHtml(c.service||"Internet")} · ${money(c.amount)}/mes</p>
+        <div class="client-meta">
+          <span>📆 Día de pago: <strong>${getPaymentDay(c)}</strong></span>
+          <span>📅 Vence: ${escapeHtml(effectiveDueDate(c)||"—")}</span>
+          <span>📡 PPPoE: ${escapeHtml(c.pppoe||c.reference||"—")}</span>
+          <span>📍 ${escapeHtml(networkBoxLabel(c.networkBoxId)||"Sin NAP")}${c.networkPort?` · Puerto ${Number(c.networkPort)}`:""}</span>
+        </div>
+        <div class="card-actions">
+          <button class="ghost" data-history-client="${escapeHtml(c.id)}">Historial</button>
+          <button class="ghost" data-edit="${escapeHtml(c.id)}">Editar</button>
+          <button class="danger-button small" data-delete-client="${escapeHtml(c.id)}">Eliminar</button>
+          <button class="primary" data-pay="${escapeHtml(c.id)}">Registrar pago</button>
+        </div>
+      </div>
+    </article>`).join(""):"No hay clientes que coincidan con el filtro.";
 }
-
 
 /* =========================================================
    PAGOS
@@ -1907,81 +1697,13 @@ function renderPayments() {
 ========================================================= */
 
 function renderHistory() {
-
-  const q =
-    ($("#historySearch")?.value || "")
-      .toLowerCase()
-      .trim();
-
-
-  const m =
-    $("#historyMonth")?.value ||
-    "";
-
-
-  const arr =
-    payments.filter(
-      p =>
-        (
-          !q ||
-          (p.clientName || "")
-            .toLowerCase()
-            .includes(q)
-        )
-        &&
-        (
-          !m ||
-          p.month === m
-        )
-    );
-
-
-  $("#historyList").className =
-    arr.length
-      ? "history-list"
-      : "history-list empty-state";
-
-
-  $("#historyList").innerHTML =
-    arr.length
-      ? arr.map(p => `
-
-        <div class="history-row">
-
-          <div>
-
-            <strong>
-              ${escapeHtml(
-                p.clientName ||
-                "Cliente"
-              )}
-            </strong>
-
-            <span>
-              ${escapeHtml(
-                p.method ||
-                "Efectivo"
-              )}
-              ·
-              ${escapeHtml(
-                p.paidDate ||
-                ""
-              )}
-            </span>
-
-          </div>
-
-          <strong class="amount-positive">
-            ${money(p.amount)}
-          </strong>
-
-        </div>
-
-      `).join("")
-      : "No hay pagos registrados.";
-
+  const q=($("#historySearch")?.value||"").toLowerCase().trim(), m=$("#historyMonth")?.value||"";
+  const arr=payments.filter(p=>(!q||(p.clientName||"").toLowerCase().includes(q))&&(!m||p.month===m));
+  $("#historyList").className=arr.length?"history-list":"history-list empty-state";
+  $("#historyList").innerHTML=arr.length?arr.map(p=>`<button type="button" class="history-row history-clickable" data-history-client="${escapeHtml(p.clientId||"")}"><div><strong>${escapeHtml(p.clientName||"Cliente eliminado")}</strong><span>${escapeHtml(p.method||"Efectivo")} · ${escapeHtml(p.paidDate||"")} · Folio ${escapeHtml(p.receiptNumber||p.id||"")}</span></div><strong class="amount-positive">${money(p.amount)}</strong></button>`).join(""):"No hay pagos registrados.";
+  const orphan=payments.filter(p=>!clients.some(c=>c.id===p.clientId)), box=$("#orphanHistoryList");
+  if(box) box.innerHTML=orphan.length?orphan.map(p=>`<div class="history-row"><div><strong>${escapeHtml(p.clientName||"Cliente eliminado")}</strong><span>${escapeHtml(p.paidDate||"")} · ${money(p.amount)}</span></div><button class="danger-button small" data-delete-history="${escapeHtml(p.id)}">Borrar historial</button></div>`).join(""):`<div class="empty-state">No hay historiales conservados de clientes eliminados.</div>`;
 }
-
 
 /* =========================================================
    FILTROS
@@ -2017,78 +1739,20 @@ $("#historyMonth").value =
 ========================================================= */
 
 function openClientDialog(c = null) {
-
-  $("#clientDialogTitle").textContent =
-    c
-      ? "Editar cliente"
-      : "Nuevo cliente";
-
-
-  $("#clientId").value =
-    c?.id || "";
-
-
-  $("#clientName").value =
-    c?.name || "";
-
-
-  $("#clientPhone").value =
-    c?.phone || "";
-
-
-  $("#clientReference").value =
-    c?.reference || "";
-
-
-  $("#clientAddress").value =
-    c?.address || "";
-
-  populateClientNetworkSelect();
-  $("#clientNetworkBox").value = c?.networkBoxId || "";
-  $("#clientNetworkPort").value = c?.networkPort ?? "";
-  $("#clientLatitude").value = c?.latitude ?? "";
-  $("#clientLongitude").value = c?.longitude ?? "";
-  $("#clientEquipmentType").value = c?.equipmentType || "ONU";
-  $("#clientEquipmentModel").value = c?.equipmentModel || "";
-  $("#clientEquipmentSerial").value = c?.equipmentSerial || "";
-  $("#clientEquipmentMac").value = c?.equipmentMac || "";
-  $("#clientEquipmentIp").value = c?.equipmentIp || "";
-  $("#clientEquipmentSsid").value = c?.equipmentSsid || "";
-
-
-  $("#clientService").value =
-    c?.service || "Internet";
-
-
-  $("#clientAmount").value =
-    c?.amount ?? 100;
-
-
-  const nextDue = c
-    ? (effectiveDueDate(c) || isoDate())
-    : addMonths(isoDate(), 1);
-  $("#clientDueDate").value = nextDue;
-  $("#clientDueDate").readOnly = Boolean(c?.lastPaymentDate);
-
-
-  $("#clientStatus").value =
-    c?.currentPaymentStatus ||
-    "pending";
-
-
-  $("#clientNotes").value =
-    c?.notes || "";
-
-
-  $("#clientPhoto").value =
-    "";
-
-  $("#deleteClientBtn")?.classList.toggle("hidden", !c);
-
-  $("#clientDialog").showModal();
-
+  $("#clientDialogTitle").textContent=c?"Editar cliente":"Nuevo cliente";
+  $("#clientId").value=c?.id||""; $("#clientName").value=c?.name||""; $("#clientPhone").value=c?.phone||"";
+  $("#clientEmail").value=c?.email||""; $("#clientPppoe").value=c?.pppoe||c?.reference||""; $("#clientAddress").value=c?.address||"";
+  populateClientNetworkSelect(); $("#clientNetworkBox").value=c?.networkBoxId||""; $("#clientNetworkPort").value=c?.networkPort??"";
+  $("#clientLatitude").value=c?.latitude??""; $("#clientLongitude").value=c?.longitude??"";
+  $("#clientEquipmentType").value=c?.equipmentType||"ONU"; $("#clientEquipmentModel").value=c?.equipmentModel||"";
+  $("#clientEquipmentSerial").value=c?.equipmentSerial||""; $("#clientEquipmentMac").value=c?.equipmentMac||"";
+  $("#clientEquipmentIp").value=c?.equipmentIp||""; $("#clientEquipmentSsid").value=c?.equipmentSsid||"";
+  $("#clientService").value=c?.service||"Internet"; $("#clientPlanMbps").value=c?.planMbps??""; $("#clientAmount").value=c?.amount??100;
+  $("#clientStartDate").value=c?.serviceStartDate||(timestampDate(c?.createdAt)?isoDate(timestampDate(c.createdAt)):isoDate()); $("#clientPaymentDay").value=getPaymentDay(c||{});
+  $("#clientDueDate").value=effectiveDueDate(c)||c?.dueDate||nextDueForPaymentDay(getPaymentDay({}),new Date());
+  $("#clientStatus").value=c?.currentPaymentStatus||"pending"; $("#clientNotes").value=c?.notes||""; $("#clientPhoto").value="";
+  $("#deleteClientBtn")?.classList.toggle("hidden",!c); $("#clientDialog").showModal();
 }
-
 
 function populateClientNetworkSelect() {
   const select = $("#clientNetworkBox");
@@ -2107,6 +1771,13 @@ function useBrowserLocation(latId, lngId) {
   }, () => toast("No se pudo obtener la ubicación. Revisa el permiso de ubicación del navegador.", "error"), { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
 }
 
+let clientLocationMap=null, clientLocationMarker=null;
+function openClientLocationPicker(){
+  const d=$("#clientLocationDialog");if(!d)return;const lat=Number($("#clientLatitude").value),lng=Number($("#clientLongitude").value),center=Number.isFinite(lat)&&Number.isFinite(lng)?[lat,lng]:[17.2208,-93.3808];
+  d.showModal();setTimeout(()=>{if(!clientLocationMap){clientLocationMap=L.map("clientLocationMap").setView(center,16);L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(clientLocationMap);clientLocationMarker=L.marker(center).addTo(clientLocationMap);clientLocationMap.on("move",()=>clientLocationMarker.setLatLng(clientLocationMap.getCenter()))}else{clientLocationMap.setView(center,16);clientLocationMarker.setLatLng(center)}clientLocationMap.invalidateSize()},80)
+}
+$("#clientPickMapBtn")?.addEventListener("click",openClientLocationPicker);
+$("#confirmClientLocationBtn")?.addEventListener("click",()=>{if(!clientLocationMap)return;const c=clientLocationMap.getCenter();$("#clientLatitude").value=c.lat.toFixed(7);$("#clientLongitude").value=c.lng.toFixed(7);$("#clientLocationDialog").close();toast("Ubicación seleccionada en el mapa.")});
 $("#clientUseLocationBtn")?.addEventListener("click", () => useBrowserLocation("#clientLatitude", "#clientLongitude"));
 $("#deleteClientBtn")?.addEventListener("click", () => deleteClient($("#clientId").value));
 
@@ -2234,8 +1905,9 @@ $("#clientForm").addEventListener(
         );
 
 
-      const dueDate =
-        $("#clientDueDate").value;
+      const paymentDay = Number($("#clientPaymentDay").value);
+      const serviceStartDate = $("#clientStartDate").value;
+      const dueDate = nextDueForPaymentDay(paymentDay, new Date());
 
 
       /* -----------------------------------------
@@ -2263,13 +1935,8 @@ $("#clientForm").addEventListener(
       }
 
 
-      if (!dueDate) {
-
-        throw new Error(
-          "Selecciona la fecha de pago."
-        );
-
-      }
+      if (!Number.isInteger(paymentDay) || paymentDay < 1 || paymentDay > 31) throw new Error("El día de pago debe estar entre 1 y 31.");
+      if (!serviceStartDate) throw new Error("Selecciona la fecha de alta del servicio.");
 
       const selectedBoxId = $("#clientNetworkBox").value || "";
       const selectedPort = $("#clientNetworkPort").value ? Number($("#clientNetworkPort").value) : null;
@@ -2301,10 +1968,18 @@ $("#clientForm").addEventListener(
             .value
             .trim(),
 
-        reference:
-          $("#clientReference")
+        email:
+          $("#clientEmail")
             .value
             .trim(),
+
+        pppoe:
+          $("#clientPppoe")
+            .value
+            .trim(),
+
+        reference:
+          oldClient?.reference || "",
 
         address:
           $("#clientAddress")
@@ -2328,8 +2003,10 @@ $("#clientForm").addEventListener(
             .trim() ||
           "Internet",
 
+        planMbps: Number($("#clientPlanMbps").value) || null,
         amount,
-
+        serviceStartDate,
+        paymentDay,
         dueDate,
 
         currentPaymentStatus:
@@ -2473,31 +2150,18 @@ $("#clientForm").addEventListener(
 );
 
 
-async function deleteClient(clientId) {
-  if (!currentUser || !clientId) return;
-  const client = clients.find(c => c.id === clientId);
-  if (!client) return;
-  const confirmed = await confirmCahesa(
-    `¿Deseas eliminar a ${client.name || "este cliente"}?
-
-Esta acción eliminará el registro del cliente y no se puede deshacer. Los pagos históricos no se eliminarán automáticamente.`,
-    { title: "Eliminar cliente", confirmText: "Eliminar", danger: true }
-  );
-  if (!confirmed) return;
-
-  try {
-    showLoading(true);
-    await deleteDoc(doc(db, "users", currentUser.uid, "clients", clientId));
-    if ($("#clientId")?.value === clientId && $("#clientDialog")?.open) $("#clientDialog").close();
-    toast("Cliente eliminado correctamente.");
-  } catch (err) {
-    console.error("ERROR ELIMINANDO CLIENTE:", err);
-    toast(friendlyError(err), "error");
-  } finally {
-    showLoading(false);
-  }
+async function deletePaymentHistoryForClient(clientId) {
+  const rows=payments.filter(p=>p.clientId===clientId); if(!rows.length)return;
+  const batch=writeBatch(db); rows.forEach(p=>batch.delete(doc(db,"users",currentUser.uid,"payments",p.id))); await batch.commit();
 }
-
+async function deleteClient(clientId) {
+  if(!currentUser||!clientId)return; const client=clients.find(c=>c.id===clientId); if(!client)return;
+  const ok=await confirmCahesa(`¿Deseas eliminar a ${client.name||"este cliente"}?\n\nDespués podrás decidir si conservas o eliminas su historial.`,{title:"Eliminar cliente",confirmText:"Continuar",danger:true});
+  if(!ok)return;
+  const delHistory=await confirmCahesa(`¿También deseas eliminar TODOS sus pagos históricos?\n\nSi eliges «Conservar historial», el cliente desaparecerá pero sus pagos permanecerán disponibles.`,{title:"Historial de pagos",confirmText:"Eliminar historial",cancelText:"Conservar historial",danger:true});
+  try{showLoading(true);if(delHistory)await deletePaymentHistoryForClient(clientId);await deleteDoc(doc(db,"users",currentUser.uid,"clients",clientId));if($("#clientDialog")?.open)$("#clientDialog").close();toast(delHistory?"Cliente e historial eliminados.":"Cliente eliminado. Su historial fue conservado.");}
+  catch(err){console.error(err);toast(friendlyError(err),"error")}finally{showLoading(false)}
+}
 /* =========================================================
    MENSUALIDADES / CALENDARIO
 ========================================================= */
@@ -2669,6 +2333,19 @@ function renderPaymentCalendar() {
    DIALOGO DE PAGO
 ========================================================= */
 
+function openClientHistoryDialog(clientId){
+  const rows=payments.filter(p=>p.clientId===clientId).sort((a,b)=>String(b.paidDate||"").localeCompare(String(a.paidDate||"")));
+  const client=clients.find(c=>c.id===clientId);
+  $("#clientHistoryTitle").textContent=client?.name||rows[0]?.clientName||"Historial";
+  $("#clientHistorySummary").textContent=`${rows.length} pago${rows.length===1?"":"s"} registrado${rows.length===1?"":"s"}`;
+  $("#clientHistoryList").innerHTML=rows.length?rows.map(p=>`<button type="button" class="history-row history-clickable" data-open-receipt='${escapeHtml(JSON.stringify(p))}'><div><strong>${escapeHtml(p.paidDate||"")}</strong><span>${escapeHtml(p.method||"Efectivo")} · Folio ${escapeHtml(p.receiptNumber||p.id)}</span></div><strong class="amount-positive">${money(p.amount)}</strong></button>`).join(""):`<div class="empty-state">Este cliente todavía no tiene pagos.</div>`;
+  $("#clientHistoryDialog").showModal();
+}
+function receiptHtml(p){return `<div class="receipt"><div class="receipt-brand">CAHESA</div><div class="receipt-title">COMPROBANTE DE PAGO</div><div class="receipt-line"><span>Cliente</span><strong>${escapeHtml(p.clientName||"—")}</strong></div><div class="receipt-line"><span>Periodo</span><strong>${escapeHtml(monthLabel(p.month||""))}</strong></div><div class="receipt-line"><span>Fecha de pago</span><strong>${escapeHtml(p.paidDate||"—")}</strong></div><div class="receipt-line"><span>Método</span><strong>${escapeHtml(p.method||"Efectivo")}</strong></div><div class="receipt-total"><span>Total pagado</span><strong>${money(p.amount)}</strong></div><div class="receipt-line"><span>Folio</span><strong>${escapeHtml(p.receiptNumber||p.id||"—")}</strong></div>${p.nextDueDate?`<div class="receipt-line"><span>Próximo vencimiento</span><strong>${escapeHtml(p.nextDueDate)}</strong></div>`:""}${p.note?`<div class="receipt-note">${escapeHtml(p.note)}</div>`:""}<div class="receipt-ok">✓ PAGO REGISTRADO</div><small>Comprobante generado por CAHESA</small></div>`}
+function openReceiptDialog(p){const d=$("#receiptDialog");if(!d)return;d.dataset.receiptText=`CAHESA\nCOMPROBANTE DE PAGO\nCliente: ${p.clientName}\nFecha: ${p.paidDate}\nMonto: ${money(p.amount)}\nMétodo: ${p.method||"Efectivo"}\nFolio: ${p.receiptNumber||p.id}`;$("#receiptContent").innerHTML=receiptHtml(p);d.showModal()}
+function printReceipt(){const content=$("#receiptContent")?.innerHTML||"",w=window.open("","_blank","width=480,height=760");if(!w){toast("El navegador bloqueó la ventana de impresión.","error");return}w.document.write(`<html><head><title>Comprobante CAHESA</title><style>body{font-family:Arial;padding:20px}.receipt{max-width:380px;margin:auto;border:1px solid #ddd;border-radius:16px;padding:22px}.receipt-line,.receipt-total{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #eee}.receipt-total{font-size:20px}.receipt-ok{text-align:center;font-weight:800;margin:18px 0}</style></head><body>${content}</body></html>`);w.document.close();setTimeout(()=>w.print(),150)}
+async function shareReceipt(){const text=$("#receiptDialog")?.dataset.receiptText||"";if(!text)return;if(navigator.share){try{await navigator.share({title:"Comprobante CAHESA",text});return}catch(e){if(e?.name==="AbortError")return}}try{await navigator.clipboard.writeText(text);toast("Comprobante copiado. Puedes pegarlo en WhatsApp.")}catch(e){toast("No fue posible compartir el comprobante.","error")}}
+
 function openPaymentDialog(id) {
 
   const c =
@@ -2801,26 +2478,22 @@ $("#paymentForm").addEventListener(
 
       const latestCoveredMonth = coveredMonths.slice().sort().at(-1);
       const billingDay = overdueMonths.length
-        ? (dateFromIso(effectiveDueDate(c))?.getDate() || dateFromIso(paidDate)?.getDate() || 1)
-        : (dateFromIso(paidDate)?.getDate() || 1);
+        ? (dateFromIso(effectiveDueDate(c))?.getDate() || getPaymentDay(c))
+        : getPaymentDay(c);
       const latestCoveredDate = latestCoveredMonth
         ? monthDayDueDate(latestCoveredMonth, billingDay)
         : paidDate;
       const nextDueDate = addMonths(latestCoveredDate, 1);
 
 
-      await addDoc(
-        collection(
-          db,
-          "users",
-          currentUser.uid,
-          "payments"
-        ),
-        {
+      const receiptNumber = `CAH-${paidDate.replaceAll("-","")}-${String(Date.now()).slice(-6)}`;
+      const paymentRef = doc(collection(db,"users",currentUser.uid,"payments"));
+      await setDoc(paymentRef, {
 
           clientId: id,
 
           clientName: c.name,
+          receiptNumber,
 
           amount,
 
@@ -2879,11 +2552,17 @@ $("#paymentForm").addEventListener(
 
 
       $("#paymentDialog").close();
-
-
-      toast(
-        `Pago de ${money(amount)} registrado.`
-      );
+      const currentDay=getPaymentDay(c), paidDay=dateFromIso(paidDate)?.getDate()||currentDay;
+      if(paidDay!==currentDay){
+        const changeDay=await confirmCahesa(`El día habitual es ${currentDay} y el pago se registró el día ${paidDay}.\n\n¿Deseas establecer el día ${paidDay} como nuevo día de pago?`,{title:"Actualizar día de pago",confirmText:`Cambiar a día ${paidDay}`,cancelText:"Mantener día actual",danger:false});
+        if(changeDay){
+          const newDue=nextDueForPaymentDay(paidDay,dateFromIso(paidDate)||new Date());
+          await updateDoc(doc(db,"users",currentUser.uid,"clients",id),{paymentDay:paidDay,dueDate:newDue,updatedAt:serverTimestamp()});
+          c.paymentDay=paidDay;c.dueDate=newDue;
+        }
+      }
+      toast(`Pago de ${money(amount)} registrado.`);
+      openReceiptDialog({id:paymentRef.id,receiptNumber,clientId:id,clientName:c.name,amount,paidDate,month:paidDate.slice(0,7),method:$("#paymentMethod").value,note:$("#paymentNote").value.trim(),nextDueDate:c.dueDate||nextDueDate});
 
 
     } catch (err) {
@@ -2925,8 +2604,8 @@ $("#paymentOverdueBox")?.addEventListener("change", () => {
 
 $("#exportClientsBtn")?.addEventListener("click", () => {
   try {
-    exportClientsCsv();
-    toast("Clientes exportados. Puedes abrir el CSV directamente con Excel.");
+    exportClientsExcel();
+    toast("Clientes exportados en formato Excel.");
   } catch (err) {
     console.error("ERROR EXPORTANDO CLIENTES:", err);
     toast(friendlyError(err), "error");
@@ -2935,8 +2614,8 @@ $("#exportClientsBtn")?.addEventListener("click", () => {
 
 $("#downloadClientTemplateBtn")?.addEventListener("click", () => {
   try {
-    downloadClientTemplate();
-    toast("Plantilla descargada.");
+    downloadClientTemplateExcel();
+    toast("Plantilla Excel descargada.");
   } catch (err) {
     console.error("ERROR PLANTILLA:", err);
     toast(friendlyError(err), "error");
@@ -2995,6 +2674,30 @@ $("#uploadBulkImagesBtn")?.addEventListener("click", async () => {
 });
 
 
+async function seedCahesaDemoData(){
+  if(!currentUser)throw new Error("Inicia sesión.");
+  if(networkBoxes.some(x=>x.demoData)||clients.some(x=>x.demoData)||payments.some(x=>x.demoData))throw new Error("Ya existen datos de ejemplo.");
+  const n1=doc(collection(db,"users",currentUser.uid,"assets")),n2=doc(collection(db,"users",currentUser.uid,"assets")),c1=doc(collection(db,"users",currentUser.uid,"clients")),c2=doc(collection(db,"users",currentUser.uid,"clients")),p1=doc(collection(db,"users",currentUser.uid,"payments")),p2=doc(collection(db,"users",currentUser.uid,"payments"));
+  const d=isoDate(),day=new Date().getDate(),d2=Math.min(28,day+3),b=writeBatch(db);
+  b.set(n1,{type:"networkBox",name:"NAP Centro",code:"NAP-01",locality:"Centro",capacity:8,status:"active",latitude:17.2201,longitude:-93.3811,address:"Zona Centro",notes:"Dato de demostración",demoData:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+  b.set(n2,{type:"networkBox",name:"NAP Norte",code:"NAP-02",locality:"Norte",capacity:8,status:"active",latitude:17.2240,longitude:-93.3775,address:"Zona Norte",notes:"Dato de demostración",demoData:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+  const cA={name:"Cliente Demo 1",phone:"9320000001",email:"demo1@cahesa.test",pppoe:"demo01",address:"Calle Demo 1",service:"Internet",planMbps:20,amount:300,serviceStartDate:addMonths(d,-6),paymentDay:day,dueDate:nextDueForPaymentDay(day,new Date()),currentPaymentStatus:"paid",networkBoxId:n1.id,networkPort:1,latitude:17.2208,longitude:-93.3808,equipmentType:"ONU",equipmentModel:"Huawei",equipmentSerial:"DEMO-001",equipmentMac:"00:00:00:00:00:01",equipmentIp:"192.168.88.101",equipmentSsid:"CAHESA-DEMO-1",notes:"Cliente de demostración",active:true,demoData:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
+  const cB={name:"Cliente Demo 2",phone:"9320000002",email:"demo2@cahesa.test",pppoe:"demo02",address:"Calle Demo 2",service:"Internet",planMbps:50,amount:450,serviceStartDate:addMonths(d,-4),paymentDay:d2,dueDate:nextDueForPaymentDay(d2,new Date()),currentPaymentStatus:"pending",networkBoxId:n2.id,networkPort:2,latitude:17.2236,longitude:-93.3772,equipmentType:"ONU",equipmentModel:"VSOL",equipmentSerial:"DEMO-002",equipmentMac:"00:00:00:00:00:02",equipmentIp:"192.168.88.102",equipmentSsid:"CAHESA-DEMO-2",notes:"Cliente de demostración",active:true,demoData:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
+  b.set(c1,cA);b.set(c2,cB);b.set(p1,{clientId:c1.id,clientName:cA.name,amount:300,paidDate:d,month:monthKey(),coveredMonths:[monthKey()],method:"Efectivo",note:"Pago de demostración",receiptNumber:"CAH-DEMO-001",demoData:true,createdAt:serverTimestamp(),paidAt:serverTimestamp()});b.set(p2,{clientId:c2.id,clientName:cB.name,amount:450,paidDate:addMonths(d,-1),month:monthKey(addMonths(d,-1)),coveredMonths:[monthKey(addMonths(d,-1))],method:"Efectivo",note:"Pago de demostración",receiptNumber:"CAH-DEMO-002",demoData:true,createdAt:serverTimestamp(),paidAt:serverTimestamp()});
+  await b.commit();toast("Datos de ejemplo cargados: 2 NAPs, 2 clientes y 2 pagos.");
+}
+async function clearCahesaDemoData(){
+  const items=[...networkBoxes.filter(x=>x.demoData).map(x=>["assets",x.id]),...clients.filter(x=>x.demoData).map(x=>["clients",x.id]),...payments.filter(x=>x.demoData).map(x=>["payments",x.id])];
+  if(!items.length){toast("No hay datos de ejemplo.");return}const ok=await confirmCahesa(`Se eliminarán ${items.length} registros de ejemplo. Los datos reales no se tocarán.`,{title:"Limpiar ejemplos",confirmText:"Eliminar ejemplos",danger:true});if(!ok)return;
+  const b=writeBatch(db);items.forEach(([col,id])=>b.delete(doc(db,"users",currentUser.uid,col,id)));await b.commit();toast("Datos de ejemplo eliminados.");
+}
+$("#seedCahesaDemoBtn")?.addEventListener("click",async()=>{try{showLoading(true);await seedCahesaDemoData()}catch(e){toast(friendlyError(e),"error")}finally{showLoading(false)}});
+$("#clearCahesaDemoBtn")?.addEventListener("click",async()=>{try{showLoading(true);await clearCahesaDemoData()}catch(e){toast(friendlyError(e),"error")}finally{showLoading(false)}});
+$("#printReceiptBtn")?.addEventListener("click",printReceipt);$("#shareReceiptBtn")?.addEventListener("click",shareReceipt);
+$("#clientHistoryList")?.addEventListener("click",e=>{const b=e.target.closest("[data-open-receipt]");if(b){try{openReceiptDialog(JSON.parse(b.dataset.openReceipt))}catch(_){}}});
+$("#orphanHistoryList")?.addEventListener("click",async e=>{const b=e.target.closest("[data-delete-history]");if(!b)return;const ok=await confirmCahesa("¿Eliminar definitivamente este registro de pago?",{title:"Eliminar historial",confirmText:"Eliminar",danger:true});if(!ok)return;try{await deleteDoc(doc(db,"users",currentUser.uid,"payments",b.dataset.deleteHistory));toast("Historial eliminado.")}catch(err){toast(friendlyError(err),"error")}});
+$("#deleteAllOrphanHistoryBtn")?.addEventListener("click",async()=>{const orphan=payments.filter(p=>!clients.some(c=>c.id===p.clientId));if(!orphan.length){toast("No hay historiales conservados.");return}const ok=await confirmCahesa(`Se eliminarán ${orphan.length} pagos de clientes eliminados.`,{title:"Eliminar historiales",confirmText:"Eliminar todos",danger:true});if(!ok)return;const b=writeBatch(db);orphan.forEach(p=>b.delete(doc(db,"users",currentUser.uid,"payments",p.id)));await b.commit();toast("Historiales eliminados.")});
+
 /* =========================================================
    BOTONES / NAVEGACIÓN
 ========================================================= */
@@ -3013,13 +2716,8 @@ document.addEventListener(
 
 
     if (nav) {
-
-      goSection(
-        nav.dataset.section
-      );
-
-      closeSidebar();
-
+      if(nav.dataset.section==="mikrotik"){confirmCahesa("La conexión con MikroTik estará disponible próximamente. Esta función permanece bloqueada por ahora.",{title:"MikroTik 🔒",confirmText:"Entendido",cancelText:"Cerrar",danger:false});closeSidebar();return;}
+      goSection(nav.dataset.section); closeSidebar();
     }
 
 
@@ -3062,6 +2760,9 @@ document.addEventListener(
       deleteClient(deleteClientBtn.dataset.deleteClient);
       return;
     }
+
+    const historyClient=e.target.closest("[data-history-client]");
+    if(historyClient){openClientHistoryDialog(historyClient.dataset.historyClient);return;}
 
     /* Editar cliente */
 
