@@ -205,3 +205,7 @@ input, textarea, select, option,
   -webkit-user-select: text;
   user-select: text;
 }
+
+.client-location-map{height:430px;border-radius:14px;overflow:hidden;background:#e2e8f0}.location-picker-card{width:min(900px,calc(100% - 24px))}
+.history-clickable{width:100%;border:0;background:none;text-align:left;font:inherit;cursor:pointer}.history-clickable:hover{background:#f8fafc}
+.receipt{max-width:430px;margin:auto;border:1px solid #e7ebf2;border-radius:16px;padding:22px;background:#fff}.receipt-brand{text-align:center;font-size:28px;font-weight:900}.receipt-title{text-align:center;margin:5px 0 18px;font-size:11px;letter-spacing:.14em;color:#64748b}.receipt-line,.receipt-total{display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px solid #edf0f4}.receipt-total{font-size:20px;padding:14px 0}.receipt-ok{text-align:center;font-weight:850;margin:18px 0 8px}.receipt small{display:block;text-align:center;color:#64748b}.receipt-note{margin:12px 0;padding:10px;background:#f8fafc;border-radius:10px}
